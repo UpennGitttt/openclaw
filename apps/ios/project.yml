@@ -32,6 +32,7 @@ targets:
     sources:
       - path: Sources
     dependencies:
+      - target: OpenClawWatchApp
       - package: OpenClawKit
       - package: OpenClawKit
         product: OpenClawChatUI
@@ -107,6 +108,48 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+
+  OpenClawWatchApp:
+    type: application.watchapp2
+    platform: watchOS
+    sources:
+      - path: WatchApp
+    dependencies:
+      - target: OpenClawWatchExtension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.openclaw.ios.watchkitapp
+        DEVELOPMENT_TEAM: Y5PE65HELJ
+    info:
+      path: WatchApp/Info.plist
+      properties:
+        CFBundleDisplayName: OpenClaw
+        CFBundleShortVersionString: "2026.2.16"
+        CFBundleVersion: "20260216"
+        WKCompanionAppBundleIdentifier: ai.openclaw.ios
+        WKWatchKitApp: true
+
+  OpenClawWatchExtension:
+    type: watchkit2-extension
+    platform: watchOS
+    sources:
+      - path: WatchExtension/Sources
+    dependencies:
+      - sdk: WatchConnectivity.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.openclaw.ios.watchkitapp.extension
+        DEVELOPMENT_TEAM: Y5PE65HELJ
+    info:
+      path: WatchExtension/Info.plist
+      properties:
+        CFBundleDisplayName: OpenClaw
+        CFBundleShortVersionString: "2026.2.16"
+        CFBundleVersion: "20260216"
+        NSExtension:
+          NSExtensionAttributes:
+            WKAppBundleIdentifier: ai.openclaw.ios.watchkitapp
+          NSExtensionPointIdentifier: com.apple.watchkit
 
   OpenClawTests:
     type: bundle.unit-test

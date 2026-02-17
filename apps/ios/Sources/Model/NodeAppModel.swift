@@ -109,6 +109,7 @@ final class NodeAppModel {
     private let calendarService: any CalendarServicing
     private let remindersService: any RemindersServicing
     private let motionService: any MotionServicing
+    private let watchMessagingService: any WatchMessagingServicing
     var lastAutoA2uiURL: String?
     private var pttVoiceWakeSuspended = false
     private var talkVoiceWakeSuspended = false
@@ -141,6 +142,7 @@ final class NodeAppModel {
         calendarService: any CalendarServicing = CalendarService(),
         remindersService: any RemindersServicing = RemindersService(),
         motionService: any MotionServicing = MotionService(),
+        watchMessagingService: any WatchMessagingServicing = WatchMessagingService(),
         talkMode: TalkModeManager = TalkModeManager())
     {
         self.screen = screen
@@ -154,6 +156,7 @@ final class NodeAppModel {
         self.calendarService = calendarService
         self.remindersService = remindersService
         self.motionService = motionService
+        self.watchMessagingService = watchMessagingService
         self.talkMode = talkMode
         GatewayDiagnostics.bootstrap()
 
@@ -1399,6 +1402,14 @@ private extension NodeAppModel {
             return try await self.handleDeviceInvoke(req)
         }
 
+        register([
+            OpenClawWatchCommand.status.rawValue,
+            OpenClawWatchCommand.notify.rawValue,
+        ]) { [weak self] req in
+            guard let self else { throw NodeCapabilityRouter.RouterError.handlerUnavailable }
+            return try await self.handleWatchInvoke(req)
+        }
+
         register([OpenClawPhotosCommand.latest.rawValue]) { [weak self] req in
             guard let self else { throw NodeCapabilityRouter.RouterError.handlerUnavailable }
             return try await self.handlePhotosInvoke(req)
@@ -1447,6 +1458,58 @@ private extension NodeAppModel {
         }
 
         return NodeCapabilityRouter(handlers: handlers)
+    }
+
+    func handleWatchInvoke(_ req: BridgeInvokeRequest) async throws -> BridgeInvokeResponse {
+        switch req.command {
+        case OpenClawWatchCommand.status.rawValue:
+            let status = await self.watchMessagingService.status()
+            let payload = OpenClawWatchStatusPayload(
+                supported: status.supported,
+                paired: status.paired,
+                appInstalled: status.appInstalled,
+                reachable: status.reachable,
+                activationState: status.activationState)
+            let json = try Self.encodePayload(payload)
+            return BridgeInvokeResponse(id: req.id, ok: true, payloadJSON: json)
+        case OpenClawWatchCommand.notify.rawValue:
+            let params = try Self.decodeParams(OpenClawWatchNotifyParams.self, from: req.paramsJSON)
+            let title = params.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let body = params.body.trimmingCharacters(in: .whitespacesAndNewlines)
+            if title.isEmpty && body.isEmpty {
+                return BridgeInvokeResponse(
+                    id: req.id,
+                    ok: false,
+                    error: OpenClawNodeError(
+                        code: .invalidRequest,
+                        message: "INVALID_REQUEST: empty watch notification"))
+            }
+            do {
+                let result = try await self.watchMessagingService.sendNotification(
+                    id: req.id,
+                    title: title,
+                    body: body,
+                    priority: params.priority)
+                let payload = OpenClawWatchNotifyPayload(
+                    deliveredImmediately: result.deliveredImmediately,
+                    queuedForDelivery: result.queuedForDelivery,
+                    transport: result.transport)
+                let json = try Self.encodePayload(payload)
+                return BridgeInvokeResponse(id: req.id, ok: true, payloadJSON: json)
+            } catch {
+                return BridgeInvokeResponse(
+                    id: req.id,
+                    ok: false,
+                    error: OpenClawNodeError(
+                        code: .unavailable,
+                        message: error.localizedDescription))
+            }
+        default:
+            return BridgeInvokeResponse(
+                id: req.id,
+                ok: false,
+                error: OpenClawNodeError(code: .invalidRequest, message: "INVALID_REQUEST: unknown command"))
+        }
     }
 
     func locationMode() -> OpenClawLocationMode {
