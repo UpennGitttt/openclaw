@@ -117,10 +117,12 @@ targets:
       - path: WatchApp
     dependencies:
       - target: OpenClawWatchExtension
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.openclaw.ios.watchkitapp
-        DEVELOPMENT_TEAM: Y5PE65HELJ
     info:
       path: WatchApp/Info.plist
       properties:
@@ -139,10 +141,12 @@ targets:
     dependencies:
       - sdk: WatchConnectivity.framework
       - sdk: UserNotifications.framework
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.openclaw.ios.watchkitapp.extension
-        DEVELOPMENT_TEAM: Y5PE65HELJ
     info:
       path: WatchExtension/Info.plist
       properties:
