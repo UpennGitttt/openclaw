@@ -121,7 +121,7 @@ node dist/index.js gateway --port 18789
 
 ```bash
 # Kill existing process and start fresh
-cd /root/openclaw && openclaw gateway stop && node dist/index.js gateway --port 18789
+cd ~/openclaw && openclaw gateway stop && node dist/index.js gateway --port 18789
 ```
 
 ### View Logs
