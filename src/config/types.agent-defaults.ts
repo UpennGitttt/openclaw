@@ -18,6 +18,10 @@ export type AgentModelEntryConfig = {
   params?: Record<string, unknown>;
   /** Enable streaming for this model (default: true, false for Ollama to avoid SDK issue #1205). */
   streaming?: boolean;
+  /** Model compatibility settings (e.g., thinkingFormat for pi-ai SDK). */
+  compat?: {
+    thinkingFormat?: "openai" | "zai" | "qwen";
+  };
 };
 
 export type AgentModelListConfig = {

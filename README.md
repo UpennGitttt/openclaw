@@ -73,6 +73,107 @@ openclaw message send --to +1234567890 --message "Hello from OpenClaw"
 openclaw agent --message "Ship checklist" --thinking high
 ```
 
+## Service Management
+
+### Start/Restart Gateway
+
+#### Option 1: npm/pnpm Installation (Recommended for Production)
+
+If you installed OpenClaw via npm or pnpm:
+
+```bash
+# Install daemon to keep running in background
+openclaw onboard --install-daemon
+
+# Start the gateway
+openclaw gateway --port 18789 --verbose
+
+# Restart (if already running)
+openclaw gateway stop
+openclaw gateway --port 18789 --verbose
+```
+
+#### Option 2: Source Code (Development)
+
+If you're running from source (e.g., `git clone` or local development):
+
+```bash
+# stop existing service
+openclaw gateway stop
+
+# From the project directory
+cd /path/to/openclaw
+
+# Using pnpm (development mode with hot reload)
+pnpm gateway:watch
+
+# Or directly with node (production-like)
+node dist/index.js gateway --port 18789
+```
+
+**Why `--port 18789`?**
+
+- `18789` is the default port for OpenClaw Gateway (you can customize it)
+- It's used for WebSocket connections between the CLI and the Gateway
+- The WebSocket runs on `ws://127.0.0.1:18789`
+
+#### Quick Restart Command
+
+```bash
+# Kill existing process and start fresh
+cd /root/openclaw && openclaw gateway stop && node dist/index.js gateway --port 18789
+```
+
+### View Logs
+
+```bash
+# Real-time log viewing
+tail -f ~/.openclaw/logs/openclaw.log
+
+# Or use OpenClaw's built-in log command
+openclaw logs
+
+# View recent lines
+tail -n 100 ~/.openclaw/logs/openclaw.log
+```
+
+### Source vs npm Installation
+
+| Feature     | npm/pnpm Install         | Source Code                |
+| ----------- | ------------------------ | -------------------------- |
+| Hot reload  | No                       | Yes (`pnpm gateway:watch`) |
+| Auto daemon | Yes (`--install-daemon`) | Manual                     |
+| Update      | `npm update`             | `git pull`                 |
+| Use case    | Production               | Development                |
+
+## Timezone Configuration
+
+By default, OpenClaw uses UTC timestamps for session headers and file names. You can configure a local timezone via the `OPENCLAW_TIMESTAMP_TIMEZONE` environment variable:
+
+```bash
+# Use Asia/Shanghai timezone
+export OPENCLAW_TIMESTAMP_TIMEZONE="Asia/Shanghai"
+openclaw gateway --port 18789 --verbose
+```
+
+Common timezone values:
+
+- `Asia/Shanghai` - China Standard Time
+- `America/New_York` - Eastern Time
+- `Europe/London` - Greenwich Mean Time
+- `Asia/Tokyo` - Japan Standard Time
+
+### Format Details
+
+- **Default (UTC)**: Standard ISO 8601 UTC format (e.g., `2026-02-20T13:02:00.000Z`)
+- **With custom timezone**: ISO 8601-like format without timezone offset (e.g., `2026-02-20T21:02:00.000` for Asia/Shanghai)
+
+### Notes
+
+- If an invalid timezone is provided, OpenClaw will fall back to UTC
+- Timezone configuration affects both session headers and file names
+- Existing sessions using UTC timestamps will continue to work normally
+
 Upgrading? [Updating guide](https://docs.openclaw.ai/install/updating) (and run `openclaw doctor`).
 
 ## Development channels

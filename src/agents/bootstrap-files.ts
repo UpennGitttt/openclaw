@@ -1,4 +1,5 @@
 import type { OpenClawConfig } from "../config/config.js";
+import { resolveAgentWorkspaceDir } from "./agent-scope.js";
 import { applyBootstrapHookOverrides } from "./bootstrap-hooks.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
 import {
@@ -30,14 +31,27 @@ export async function resolveBootstrapFilesForRun(params: {
   agentId?: string;
 }): Promise<WorkspaceBootstrapFile[]> {
   const sessionKey = params.sessionKey ?? params.sessionId;
+
+  // 如果有 agentId，优先使用 agent 专属 workspace（使用框架标准函数）
+  let effectiveWorkspaceDir = params.workspaceDir;
+  if (params.agentId && params.config) {
+    try {
+      effectiveWorkspaceDir = resolveAgentWorkspaceDir(params.config, params.agentId);
+    } catch (error) {
+      console.warn(
+        `解析 agent workspace 失败，使用默认 workspace: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   const bootstrapFiles = filterBootstrapFilesForSession(
-    await loadWorkspaceBootstrapFiles(params.workspaceDir),
+    await loadWorkspaceBootstrapFiles(effectiveWorkspaceDir),
     sessionKey,
   );
 
   return applyBootstrapHookOverrides({
     files: bootstrapFiles,
-    workspaceDir: params.workspaceDir,
+    workspaceDir: effectiveWorkspaceDir,
     config: params.config,
     sessionKey: params.sessionKey,
     sessionId: params.sessionId,

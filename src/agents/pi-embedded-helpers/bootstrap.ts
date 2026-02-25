@@ -3,6 +3,7 @@ import path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { OpenClawConfig } from "../../config/config.js";
 import { truncateUtf16Safe } from "../../utils.js";
+import { getSessionTimestamp } from "../../utils/timestamp.js";
 import type { WorkspaceBootstrapFile } from "../workspace.js";
 import type { EmbeddedContextFile } from "./types.js";
 
@@ -174,11 +175,12 @@ export async function ensureSessionHeader(params: {
   }
   await fs.mkdir(path.dirname(file), { recursive: true });
   const sessionVersion = 2;
+  const timestamp = getSessionTimestamp();
   const entry = {
     type: "session",
     version: sessionVersion,
     id: params.sessionId,
-    timestamp: new Date().toISOString(),
+    timestamp: timestamp,
     cwd: params.cwd,
   };
   await fs.writeFile(file, `${JSON.stringify(entry)}\n`, "utf-8");

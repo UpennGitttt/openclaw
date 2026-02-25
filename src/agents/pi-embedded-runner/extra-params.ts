@@ -280,6 +280,101 @@ function createZaiToolStreamWrapper(
 }
 
 /**
+ * Create a streamFn wrapper that injects thinking-related params into the API request.
+ * Uses pi-ai SDK's native reasoningEffort option which supports multiple formats:
+ * - Z.AI: reasoningEffort controls { thinking: { type: "enabled" | "disabled" } }
+ * - Qwen: reasoningEffort controls { enable_thinking: boolean }
+ * - OpenAI: reasoningEffort controls { reasoning_effort: "low" | "medium" | "high" }
+ *
+ * Configuration example (via thinkingDefault or model params):
+ *   thinkingDefault: "off"  # disables thinking for all models
+ *
+ *   Or per-model:
+ *   models:
+ *     qianwen/qwen3.5-plus:
+ *       params:
+ *         reasoningEffort: false  # false = disabled, "low"/"medium"/"high" = enabled
+ */
+function createThinkingWrapper(
+  baseStreamFn: StreamFn | undefined,
+  extraParams: Record<string, unknown> | undefined,
+): StreamFn | undefined {
+  if (!extraParams) {
+    return undefined;
+  }
+
+  // Check for reasoningEffort param (pi-ai SDK uses this field name)
+  // Can be: false (disabled), "low", "medium", "high", "xhigh"
+  const reasoningEffort = extraParams.reasoningEffort;
+
+  if (reasoningEffort === undefined) {
+    return undefined;
+  }
+
+  // Validate reasoningEffort value to prevent runtime errors
+  const validReasoningEfforts: Array<string | boolean | undefined> = [
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    false,
+    undefined,
+  ];
+  const eff = reasoningEffort as string | boolean | undefined;
+  if (!validReasoningEfforts.includes(eff)) {
+    log.warn(`[thinking] invalid reasoningEffort value: ${String(eff)}, ignoring`);
+    return undefined;
+  }
+
+  log.debug(`[thinking] applying reasoningEffort=${eff}`);
+
+  const underlying = baseStreamFn ?? streamSimple;
+  // pi-ai SDK expects: reasoningEffort?: ThinkingLevel | boolean
+  // For disabling, we use false which gets converted by SDK based on model compat
+  const wrappedStreamFn: StreamFn = (model, context, options) =>
+    underlying(model, context, {
+      ...options,
+      reasoningEffort: eff,
+    } as Parameters<typeof underlying>[2]);
+
+  return wrappedStreamFn;
+}
+
+/**
+ * Create a streamFn wrapper that injects model compat settings (e.g., thinkingFormat)
+ * into the model object before passing to the underlying streamFn.
+ *
+ * This allows setting pi-ai SDK compatibility options like thinkingFormat without
+ * modifying the source model registry.
+ */
+function createModelCompatWrapper(
+  baseStreamFn: StreamFn | undefined,
+  compat: { thinkingFormat?: "openai" | "zai" | "qwen" },
+): StreamFn | undefined {
+  if (!compat || Object.keys(compat).length === 0) {
+    return undefined;
+  }
+
+  log.debug(`[model-compat] applying compat settings: ${JSON.stringify(compat)}`);
+
+  const underlying = baseStreamFn ?? streamSimple;
+  const wrappedStreamFn: StreamFn = (model, context, options) => {
+    // Inject compat into the model object
+    const modelWithCompat = {
+      ...model,
+      compat: {
+        ...(model as { compat?: Record<string, unknown> }).compat,
+        ...compat,
+      },
+    };
+    return underlying(modelWithCompat, context, options);
+  };
+
+  return wrappedStreamFn;
+}
+
+/**
  * Apply extra params (like temperature) to an agent's streamFn.
  * Also adds OpenRouter app attribution headers when using the OpenRouter provider.
  *
@@ -292,6 +387,9 @@ export function applyExtraParamsToAgent(
   modelId: string,
   extraParamsOverride?: Record<string, unknown>,
 ): void {
+  const modelKey = `${provider}/${modelId}`;
+  const modelConfig = cfg?.agents?.defaults?.models?.[modelKey];
+
   const extraParams = resolveExtraParams({
     cfg,
     provider,
@@ -304,6 +402,14 @@ export function applyExtraParamsToAgent(
         )
       : undefined;
   const merged = Object.assign({}, extraParams, override);
+
+  // Apply model compat settings (e.g., thinkingFormat for pi-ai SDK)
+  const modelCompat = modelConfig?.compat;
+  if (modelCompat) {
+    log.debug(`applying model compat for ${provider}/${modelId}: ${JSON.stringify(modelCompat)}`);
+    agent.streamFn = createModelCompatWrapper(agent.streamFn, modelCompat);
+  }
+
   const wrappedStreamFn = createStreamFnWithExtraParams(agent.streamFn, merged, provider);
 
   if (wrappedStreamFn) {
@@ -332,6 +438,14 @@ export function applyExtraParamsToAgent(
       log.debug(`enabling Z.AI tool_stream for ${provider}/${modelId}`);
       agent.streamFn = createZaiToolStreamWrapper(agent.streamFn, true);
     }
+  }
+
+  // Inject thinking-related params (thinking, enable_thinking) into API requests.
+  // Supports both ark format and qianwen/extra_body format.
+  const thinkingWrapper = createThinkingWrapper(agent.streamFn, merged);
+  if (thinkingWrapper) {
+    log.debug(`applying thinking params to agent streamFn for ${provider}/${modelId}`);
+    agent.streamFn = thinkingWrapper;
   }
 
   // Work around upstream pi-ai hardcoding `store: false` for Responses API.

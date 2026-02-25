@@ -24,6 +24,7 @@ export type AgentConfig = {
   name?: string;
   workspace?: string;
   agentDir?: string;
+  workspaceDir?: string;
   model?: AgentModelConfig;
   /** Optional allowlist of skills for this agent (omit = all skills; empty = none). */
   skills?: string[];

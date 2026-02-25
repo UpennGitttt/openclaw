@@ -30,6 +30,7 @@ import { deliverSessionMaintenanceWarning } from "../../infra/session-maintenanc
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { normalizeMainKey } from "../../routing/session-key.js";
 import { normalizeSessionDeliveryFields } from "../../utils/delivery-context.js";
+import { getSessionTimestamp, getFileTimestamp } from "../../utils/timestamp.js";
 import { resolveCommandAuthorization } from "../command-auth.js";
 import type { MsgContext, TemplateContext } from "../templating.js";
 import { normalizeInboundTextNewlines } from "./inbound-text.js";
@@ -78,8 +79,8 @@ function forkSessionFromParent(params: {
       }
     }
     const sessionId = crypto.randomUUID();
-    const timestamp = new Date().toISOString();
-    const fileTimestamp = timestamp.replace(/[:.]/g, "-");
+    const timestamp = getSessionTimestamp();
+    const fileTimestamp = getFileTimestamp();
     const sessionFile = path.join(manager.getSessionDir(), `${fileTimestamp}_${sessionId}.jsonl`);
     const header = {
       type: "session",

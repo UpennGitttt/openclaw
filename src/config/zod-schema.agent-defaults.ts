@@ -38,6 +38,15 @@ export const AgentDefaultsSchema = z
             params: z.record(z.string(), z.unknown()).optional(),
             /** Enable streaming for this model (default: true, false for Ollama to avoid SDK issue #1205). */
             streaming: z.boolean().optional(),
+            /** Model compatibility settings (e.g., thinkingFormat for pi-ai SDK). */
+            compat: z
+              .object({
+                thinkingFormat: z
+                  .union([z.literal("openai"), z.literal("zai"), z.literal("qwen")])
+                  .optional(),
+              })
+              .strict()
+              .optional(),
           })
           .strict(),
       )
