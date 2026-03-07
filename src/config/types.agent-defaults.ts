@@ -134,6 +134,18 @@ export type AgentDefaultsConfig = {
   models?: Record<string, AgentModelEntryConfig>;
   /** Agent working directory (preferred). Used as the default cwd for agent runs. */
   workspace?: string;
+  /** Default system prompt text used when no per-agent override exists. */
+  systemPrompt?: string;
+  /**
+   * How configured systemPrompt is applied:
+   * - append (default): keep OpenClaw built-ins, append configured prompt as a dedicated section
+   * - replace: replace built-in instruction sections with configured prompt text
+   */
+  systemPromptMode?: "append" | "replace";
+  /** Default prompt context files injected for agents when no per-agent override exists. */
+  promptContext?: {
+    files?: string[];
+  };
   /** Optional repository root for system prompt runtime line (overrides auto-detect). */
   repoRoot?: string;
   /** Skip bootstrap (BOOTSTRAP.md creation, etc.) for pre-configured deployments. */

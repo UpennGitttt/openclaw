@@ -52,6 +52,14 @@ export const AgentDefaultsSchema = z
       )
       .optional(),
     workspace: z.string().optional(),
+    systemPrompt: z.string().optional(),
+    systemPromptMode: z.union([z.literal("append"), z.literal("replace")]).optional(),
+    promptContext: z
+      .object({
+        files: z.array(z.string()).optional(),
+      })
+      .strict()
+      .optional(),
     repoRoot: z.string().optional(),
     skipBootstrap: z.boolean().optional(),
     bootstrapMaxChars: z.number().int().positive().optional(),

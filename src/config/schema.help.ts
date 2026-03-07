@@ -17,6 +17,22 @@ export const FIELD_HELP: Record<string, string> = {
     "Optional allowlist of skills for this agent (omit = all skills; empty = no skills).",
   "agents.list[].identity.avatar":
     "Avatar image path (relative to the agent workspace only) or a remote URL/data URL.",
+  "agents.defaults.systemPromptMode":
+    'How configured system prompts are applied globally ("append" keeps built-ins; "replace" overrides built-in instruction sections).',
+  "agents.defaults.systemPrompt":
+    "Default system prompt text used when no per-agent override exists.",
+  "agents.defaults.promptContext":
+    "Default injected workspace prompt-context files for agents (used when an agent does not override promptContext.files).",
+  "agents.defaults.promptContext.files":
+    "Ordered file/glob patterns to inject into Project Context (relative to the agent workspace).",
+  "agents.list[].systemPromptMode":
+    'How this agent applies configured system prompts ("append" keeps built-ins; "replace" overrides built-in instruction sections).',
+  "agents.list[].systemPrompt":
+    "Agent-specific system prompt text (overrides agents.defaults.systemPrompt when set).",
+  "agents.list[].promptContext":
+    "Per-agent injected workspace prompt-context files (overrides agents.defaults.promptContext.files when set).",
+  "agents.list[].promptContext.files":
+    "Ordered file/glob patterns to inject into Project Context for this agent (relative to agent workspace).",
   "agents.defaults.heartbeat.suppressToolErrorWarnings":
     "Suppress tool error warning payloads during heartbeat runs.",
   "agents.list[].heartbeat.suppressToolErrorWarnings":
@@ -87,6 +103,17 @@ export const FIELD_HELP: Record<string, string> = {
   "tools.exec.pathPrepend": "Directories to prepend to PATH for exec runs (gateway/sandbox).",
   "tools.exec.safeBins":
     "Allow stdin-only safe binaries to run without explicit allowlist entries.",
+  "tools.policy": "Scoped tool policies by source kind (core tools, plugins, MCP).",
+  "tools.policy.tools": "Policy applied only to OpenClaw core tools.",
+  "tools.policy.plugins": "Policy applied only to plugin-provided tools.",
+  "tools.policy.mcp":
+    'Policy applied only to MCP-origin tools (prefer "server/tool" match entries).',
+  "agents.list[].tools.policy":
+    "Per-agent scoped tool policies by source kind (core tools, plugins, MCP).",
+  "agents.list[].tools.policy.tools": "Per-agent policy applied only to OpenClaw core tools.",
+  "agents.list[].tools.policy.plugins": "Per-agent policy applied only to plugin-provided tools.",
+  "agents.list[].tools.policy.mcp":
+    'Per-agent policy applied only to MCP-origin tools (prefer "server/tool" match entries).',
   "tools.fs.workspaceOnly":
     "Restrict filesystem tools (read/write/edit/apply_patch) to the workspace directory (default: false).",
   "tools.sessions.visibility":

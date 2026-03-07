@@ -22,6 +22,18 @@ export type AgentConfig = {
   id: string;
   default?: boolean;
   name?: string;
+  /** Optional agent-specific system prompt text. */
+  systemPrompt?: string;
+  /**
+   * How configured systemPrompt is applied for this agent:
+   * - append (default): keep OpenClaw built-ins, append configured prompt as a dedicated section
+   * - replace: replace built-in instruction sections with configured prompt text
+   */
+  systemPromptMode?: "append" | "replace";
+  /** Prompt context files injected for this agent (overrides defaults when set). */
+  promptContext?: {
+    files?: string[];
+  };
   workspace?: string;
   agentDir?: string;
   workspaceDir?: string;

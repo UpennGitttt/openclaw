@@ -177,6 +177,18 @@ export type ToolPolicyConfig = {
   profile?: ToolProfileId;
 };
 
+export type ScopedToolPoliciesConfig = {
+  /** Policy applied only to OpenClaw core tools. */
+  tools?: ToolPolicyConfig;
+  /** Policy applied only to plugin-provided tools. */
+  plugins?: ToolPolicyConfig;
+  /**
+   * Policy applied only to MCP-origin tools.
+   * Match entries should prefer "server/tool" form when available.
+   */
+  mcp?: ToolPolicyConfig;
+};
+
 export type GroupToolPolicyConfig = {
   allow?: string[];
   /** Additional allowlist entries merged into allow. */
@@ -256,6 +268,8 @@ export type AgentToolsConfig = {
   deny?: string[];
   /** Optional tool policy overrides keyed by provider id or "provider/model". */
   byProvider?: Record<string, ToolPolicyConfig>;
+  /** Scoped policies for core/plugin/MCP tool subsets. */
+  policy?: ScopedToolPoliciesConfig;
   /** Per-agent elevated exec gate (can only further restrict global tools.elevated). */
   elevated?: {
     /** Enable or disable elevated mode for this agent (default: true). */
@@ -404,6 +418,8 @@ export type ToolsConfig = {
   deny?: string[];
   /** Optional tool policy overrides keyed by provider id or "provider/model". */
   byProvider?: Record<string, ToolPolicyConfig>;
+  /** Scoped policies for core/plugin/MCP tool subsets. */
+  policy?: ScopedToolPoliciesConfig;
   web?: {
     search?: {
       /** Enable web search tool (default: true when API key is present). */

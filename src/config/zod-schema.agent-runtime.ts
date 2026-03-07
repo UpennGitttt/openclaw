@@ -311,6 +311,15 @@ export const ToolPolicyWithProfileSchema = z
     );
   });
 
+const ScopedToolPoliciesSchema = z
+  .object({
+    tools: ToolPolicyWithProfileSchema.optional(),
+    plugins: ToolPolicyWithProfileSchema.optional(),
+    mcp: ToolPolicyWithProfileSchema.optional(),
+  })
+  .strict()
+  .optional();
+
 // Provider docking: allowlists keyed by provider id (no schema updates when adding providers).
 export const ElevatedAllowFromSchema = z
   .record(z.string(), z.array(z.union([z.string(), z.number()])))
@@ -432,6 +441,7 @@ export const AgentToolsSchema = z
     alsoAllow: z.array(z.string()).optional(),
     deny: z.array(z.string()).optional(),
     byProvider: z.record(z.string(), ToolPolicyWithProfileSchema).optional(),
+    policy: ScopedToolPoliciesSchema,
     elevated: z
       .object({
         enabled: z.boolean().optional(),
@@ -593,6 +603,14 @@ export const AgentEntrySchema = z
     id: z.string(),
     default: z.boolean().optional(),
     name: z.string().optional(),
+    systemPrompt: z.string().optional(),
+    systemPromptMode: z.union([z.literal("append"), z.literal("replace")]).optional(),
+    promptContext: z
+      .object({
+        files: z.array(z.string()).optional(),
+      })
+      .strict()
+      .optional(),
     workspace: z.string().optional(),
     agentDir: z.string().optional(),
     workspaceDir: z.string().optional(),
@@ -633,6 +651,7 @@ export const ToolsSchema = z
     alsoAllow: z.array(z.string()).optional(),
     deny: z.array(z.string()).optional(),
     byProvider: z.record(z.string(), ToolPolicyWithProfileSchema).optional(),
+    policy: ScopedToolPoliciesSchema,
     web: ToolsWebSchema,
     media: ToolsMediaSchema,
     links: ToolsLinksSchema,
