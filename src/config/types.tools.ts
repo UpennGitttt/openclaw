@@ -239,6 +239,14 @@ export type FsToolsConfig = {
   workspaceOnly?: boolean;
 };
 
+export type InvokeToolsConfig = {
+  /**
+   * Default timeout (ms) for external/tool bridge invocations.
+   * @default 30000
+   */
+  timeoutMs?: number;
+};
+
 export type AgentToolsConfig = {
   /** Base tool profile applied before allow/deny lists. */
   profile?: ToolProfileId;
@@ -259,6 +267,8 @@ export type AgentToolsConfig = {
   exec?: ExecToolConfig;
   /** Filesystem tool path guards. */
   fs?: FsToolsConfig;
+  /** Tool invocation timeout defaults. */
+  invoke?: InvokeToolsConfig;
   /** Runtime loop detection for repetitive/ stuck tool-call patterns. */
   loopDetection?: ToolLoopDetectionConfig;
   sandbox?: {
@@ -521,6 +531,8 @@ export type ToolsConfig = {
   exec?: ExecToolConfig;
   /** Filesystem tool path guards. */
   fs?: FsToolsConfig;
+  /** Tool invocation timeout defaults. */
+  invoke?: InvokeToolsConfig;
   /** Runtime loop detection for repetitive/ stuck tool-call patterns. */
   loopDetection?: ToolLoopDetectionConfig;
   /** Sub-agent tool policy defaults (deny wins). */

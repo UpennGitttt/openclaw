@@ -1,6 +1,7 @@
 import { loadConfig, resolveGatewayPort } from "../../config/config.js";
 import { callGateway } from "../../gateway/call.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../../utils/message-channel.js";
+import { resolveAgentConfig } from "../agent-scope.js";
 import { readStringParam } from "./common.js";
 
 export const DEFAULT_GATEWAY_URL = "ws://127.0.0.1:18789";
@@ -9,13 +10,18 @@ export type GatewayCallOptions = {
   gatewayUrl?: string;
   gatewayToken?: string;
   timeoutMs?: number;
+  agentId?: string;
 };
 
-export function readGatewayCallOptions(params: Record<string, unknown>): GatewayCallOptions {
+export function readGatewayCallOptions(
+  params: Record<string, unknown>,
+  defaults?: { agentId?: string },
+): GatewayCallOptions {
   return {
     gatewayUrl: readStringParam(params, "gatewayUrl", { trim: false }),
     gatewayToken: readStringParam(params, "gatewayToken", { trim: false }),
     timeoutMs: typeof params.timeoutMs === "number" ? params.timeoutMs : undefined,
+    agentId: defaults?.agentId,
   };
 }
 
@@ -95,10 +101,22 @@ export function resolveGatewayOptions(opts?: GatewayCallOptions) {
     typeof opts?.gatewayToken === "string" && opts.gatewayToken.trim()
       ? opts.gatewayToken.trim()
       : undefined;
+  const cfg = loadConfig();
   const timeoutMs =
     typeof opts?.timeoutMs === "number" && Number.isFinite(opts.timeoutMs)
       ? Math.max(1, Math.floor(opts.timeoutMs))
-      : 30_000;
+      : (() => {
+          const globalTimeoutMs = cfg.tools?.invoke?.timeoutMs;
+          const agentTimeoutMs =
+            typeof opts?.agentId === "string" && opts.agentId.trim()
+              ? resolveAgentConfig(cfg, opts.agentId.trim())?.tools?.invoke?.timeoutMs
+              : undefined;
+          const resolved = agentTimeoutMs ?? globalTimeoutMs;
+          if (typeof resolved === "number" && Number.isFinite(resolved)) {
+            return Math.max(1, Math.floor(resolved));
+          }
+          return 30_000;
+        })();
   return { url, token, timeoutMs };
 }
 

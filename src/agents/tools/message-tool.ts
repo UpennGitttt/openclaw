@@ -618,11 +618,15 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
       if (accountId) {
         params.accountId = accountId;
       }
+      const resolvedAgentId = options?.agentSessionKey
+        ? resolveSessionAgentId({ sessionKey: options.agentSessionKey, config: cfg })
+        : undefined;
 
       const gatewayResolved = resolveGatewayOptions({
         gatewayUrl: readStringParam(params, "gatewayUrl", { trim: false }),
         gatewayToken: readStringParam(params, "gatewayToken", { trim: false }),
         timeoutMs: readNumberParam(params, "timeoutMs"),
+        agentId: resolvedAgentId,
       });
       const gateway = {
         url: gatewayResolved.url,
@@ -659,9 +663,7 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
         gateway,
         toolContext,
         sessionKey: options?.agentSessionKey,
-        agentId: options?.agentSessionKey
-          ? resolveSessionAgentId({ sessionKey: options.agentSessionKey, config: cfg })
-          : undefined,
+        agentId: resolvedAgentId,
         sandboxRoot: options?.sandboxRoot,
         abortSignal: signal,
       });

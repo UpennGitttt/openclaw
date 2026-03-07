@@ -45,6 +45,8 @@ type SubagentAnnounceDeliveryResult = {
   error?: string;
 };
 
+const SUBAGENT_ANNOUNCE_GATEWAY_TIMEOUT_MS = 90_000;
+
 function buildCompletionDeliveryMessage(params: {
   findings: string;
   subagentName: string;
@@ -316,7 +318,7 @@ async function sendAnnounce(item: AnnounceQueueItem) {
       deliver: !requesterIsSubagent,
       idempotencyKey,
     },
-    timeoutMs: 15_000,
+    timeoutMs: SUBAGENT_ANNOUNCE_GATEWAY_TIMEOUT_MS,
   });
 }
 
@@ -478,7 +480,7 @@ async function sendSubagentAnnounceDirectly(params: {
           message: params.completionMessage,
           idempotencyKey: params.directIdempotencyKey,
         },
-        timeoutMs: 15_000,
+        timeoutMs: SUBAGENT_ANNOUNCE_GATEWAY_TIMEOUT_MS,
       });
 
       return {
@@ -505,7 +507,7 @@ async function sendSubagentAnnounceDirectly(params: {
         idempotencyKey: params.directIdempotencyKey,
       },
       expectFinal: true,
-      timeoutMs: 15_000,
+      timeoutMs: SUBAGENT_ANNOUNCE_GATEWAY_TIMEOUT_MS,
     });
 
     return {

@@ -5,6 +5,7 @@ import { writeBase64ToFile } from "../../cli/nodes-camera.js";
 import { canvasSnapshotTempPath, parseCanvasSnapshotPayload } from "../../cli/nodes-canvas.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { imageMimeFromFormat } from "../../media/mime.js";
+import { resolveSessionAgentId } from "../agent-scope.js";
 import { resolveImageSanitizationLimits } from "../image-sanitization.js";
 import { optionalStringEnum, stringEnum } from "../schema/typebox.js";
 import { type AnyAgentTool, imageResult, jsonResult, readStringParam } from "./common.js";
@@ -50,7 +51,14 @@ const CanvasToolSchema = Type.Object({
   jsonlPath: Type.Optional(Type.String()),
 });
 
-export function createCanvasTool(options?: { config?: OpenClawConfig }): AnyAgentTool {
+export function createCanvasTool(options?: {
+  config?: OpenClawConfig;
+  agentSessionKey?: string;
+}): AnyAgentTool {
+  const agentId = resolveSessionAgentId({
+    sessionKey: options?.agentSessionKey,
+    config: options?.config,
+  });
   const imageSanitization = resolveImageSanitizationLimits(options?.config);
   return {
     label: "Canvas",
@@ -61,7 +69,7 @@ export function createCanvasTool(options?: { config?: OpenClawConfig }): AnyAgen
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
       const action = readStringParam(params, "action", { required: true });
-      const gatewayOpts = readGatewayCallOptions(params);
+      const gatewayOpts = readGatewayCallOptions(params, { agentId });
 
       const nodeId = await resolveNodeId(
         gatewayOpts,

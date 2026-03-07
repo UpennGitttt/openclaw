@@ -8,6 +8,7 @@ import {
   writeRestartSentinel,
 } from "../../infra/restart-sentinel.js";
 import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
+import { resolveSessionAgentId } from "../agent-scope.js";
 import { stringEnum } from "../schema/typebox.js";
 import { type AnyAgentTool, jsonResult, readStringParam } from "./common.js";
 import { callGatewayTool } from "./gateway.js";
@@ -136,7 +137,11 @@ export function createGatewayTool(opts?: {
         typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
           ? Math.max(1, Math.floor(params.timeoutMs))
           : undefined;
-      const gatewayOpts = { gatewayUrl, gatewayToken, timeoutMs };
+      const agentId = resolveSessionAgentId({
+        sessionKey: opts?.agentSessionKey,
+        config: opts?.config,
+      });
+      const gatewayOpts = { gatewayUrl, gatewayToken, timeoutMs, agentId };
 
       const resolveGatewayWriteMeta = (): {
         sessionKey: string | undefined;

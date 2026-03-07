@@ -357,6 +357,13 @@ const ToolFsSchema = z
   .strict()
   .optional();
 
+const ToolInvokeSchema = z
+  .object({
+    timeoutMs: z.number().int().positive().optional(),
+  })
+  .strict()
+  .optional();
+
 const ToolLoopDetectionDetectorSchema = z
   .object({
     genericRepeat: z.boolean().optional(),
@@ -434,6 +441,7 @@ export const AgentToolsSchema = z
       .optional(),
     exec: AgentToolExecSchema,
     fs: ToolFsSchema,
+    invoke: ToolInvokeSchema,
     loopDetection: ToolLoopDetectionSchema,
     sandbox: z
       .object({
@@ -678,6 +686,7 @@ export const ToolsSchema = z
       .optional(),
     exec: ToolExecSchema,
     fs: ToolFsSchema,
+    invoke: ToolInvokeSchema,
     subagents: z
       .object({
         tools: ToolPolicySchema,

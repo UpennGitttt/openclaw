@@ -111,7 +111,7 @@ export function createNodesTool(options?: {
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
       const action = readStringParam(params, "action", { required: true });
-      const gatewayOpts = readGatewayCallOptions(params);
+      const gatewayOpts = readGatewayCallOptions(params, { agentId });
 
       try {
         switch (action) {

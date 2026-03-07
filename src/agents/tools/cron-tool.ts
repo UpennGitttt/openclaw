@@ -261,10 +261,15 @@ Use jobId as the canonical identifier; id is accepted for compatibility. Use con
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
       const action = readStringParam(params, "action", { required: true });
+      const cfg = loadConfig();
+      const agentId = opts?.agentSessionKey
+        ? resolveSessionAgentId({ sessionKey: opts.agentSessionKey, config: cfg })
+        : undefined;
       const gatewayOpts: GatewayCallOptions = {
         gatewayUrl: readStringParam(params, "gatewayUrl", { trim: false }),
         gatewayToken: readStringParam(params, "gatewayToken", { trim: false }),
         timeoutMs: typeof params.timeoutMs === "number" ? params.timeoutMs : 60_000,
+        agentId,
       };
 
       switch (action) {
@@ -334,7 +339,6 @@ Use jobId as the canonical identifier; id is accepted for compatibility. Use con
           }
           const job = normalizeCronJobCreate(params.job) ?? params.job;
           if (job && typeof job === "object") {
-            const cfg = loadConfig();
             const { mainKey, alias } = resolveMainSessionAlias(cfg);
             const resolvedSessionKey = opts?.agentSessionKey
               ? resolveInternalSessionKey({ key: opts.agentSessionKey, alias, mainKey })
