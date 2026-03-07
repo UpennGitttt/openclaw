@@ -1,0 +1,116 @@
+{
+  "id": "cozeloop-hook",
+  "name": "Cozeloop Hook Exporter",
+  "description": "Export llm_input + agent_end hook payloads to Cozeloop trace ingest API",
+  "uiHints": {
+    "enabled": {
+      "label": "Enabled",
+      "help": "Enable Cozeloop hook export"
+    },
+    "workspaceId": {
+      "label": "Workspace ID",
+      "help": "Cozeloop workspace ID"
+    },
+    "apiToken": {
+      "label": "API Token",
+      "sensitive": true,
+      "help": "Cozeloop PAT token"
+    },
+    "baseUrl": {
+      "label": "API Base URL",
+      "placeholder": "https://api.coze.cn",
+      "advanced": true
+    },
+    "timeoutMs": {
+      "label": "Timeout (ms)",
+      "placeholder": "5000",
+      "advanced": true
+    },
+    "localLogPath": {
+      "label": "Local Log Path",
+      "placeholder": "~/.openclaw/logs/cozeloop-hook.jsonl",
+      "advanced": true
+    },
+    "maxSerializedChars": {
+      "label": "Max Serialized Chars",
+      "placeholder": "180000",
+      "advanced": true,
+      "help": "Cap serialized payload size per span input/output"
+    },
+    "spanNameMode": {
+      "label": "Span Name Mode",
+      "help": "agent=use resolved agent name, fixed=use spanNamePrefix",
+      "advanced": true
+    },
+    "spanNamePrefix": {
+      "label": "Span Name Prefix",
+      "placeholder": "openclaw",
+      "advanced": true
+    },
+    "llmSpanType": {
+      "label": "LLM Span Type",
+      "placeholder": "model",
+      "advanced": true
+    },
+    "agentSpanType": {
+      "label": "Agent Span Type",
+      "placeholder": "agent",
+      "advanced": true
+    },
+    "llmOutputWaitMs": {
+      "label": "LLM Output Wait (ms)",
+      "placeholder": "1500",
+      "advanced": true,
+      "help": "Wait window after agent_end to correlate delayed llm_output before fallback ingest"
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "workspaceId": {
+        "type": "string"
+      },
+      "apiToken": {
+        "type": "string"
+      },
+      "baseUrl": {
+        "type": "string"
+      },
+      "timeoutMs": {
+        "type": "number",
+        "minimum": 1000,
+        "maximum": 60000
+      },
+      "localLogPath": {
+        "type": "string"
+      },
+      "maxSerializedChars": {
+        "type": "number",
+        "minimum": 2000,
+        "maximum": 2000000
+      },
+      "spanNameMode": {
+        "type": "string",
+        "enum": ["agent", "fixed"]
+      },
+      "spanNamePrefix": {
+        "type": "string"
+      },
+      "llmSpanType": {
+        "type": "string"
+      },
+      "agentSpanType": {
+        "type": "string"
+      },
+      "llmOutputWaitMs": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 30000
+      }
+    }
+  }
+}

@@ -5,6 +5,7 @@ import type { OpenClawConfig } from "../config/config.js";
 import { shouldLogVerbose } from "../globals.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import { resolveSessionAgentIds } from "./agent-scope.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "./bootstrap-files.js";
@@ -36,6 +37,7 @@ export async function runCliAgent(params: {
   sessionId: string;
   sessionKey?: string;
   agentId?: string;
+  messageProvider?: string;
   sessionFile: string;
   workspaceDir: string;
   config?: OpenClawConfig;
@@ -68,6 +70,24 @@ export async function runCliAgent(params: {
     );
   }
   const workspaceDir = resolvedWorkspace;
+  const hookRunner = getGlobalHookRunner();
+  const hookCtx = {
+    agentId: workspaceResolution.agentId,
+    sessionKey: params.sessionKey,
+    sessionId: params.sessionId,
+    workspaceDir,
+    messageProvider: params.messageProvider ?? undefined,
+  };
+  const runHookSafely = async (
+    hookName: "llm_input" | "llm_output" | "agent_end",
+    task: () => Promise<void>,
+  ) => {
+    try {
+      await task();
+    } catch (hookErr) {
+      log.warn(`${hookName} hook failed: ${String(hookErr)}`);
+    }
+  };
 
   const backendResolved = resolveCliBackendConfig(params.provider, params.config);
   if (!backendResolved) {
@@ -141,6 +161,23 @@ export async function runCliAgent(params: {
     isNewSession: isNew,
     systemPrompt,
   });
+  if (hookRunner?.hasHooks("llm_input")) {
+    await runHookSafely("llm_input", async () => {
+      await hookRunner.runLlmInput(
+        {
+          runId: params.runId,
+          sessionId: params.sessionId,
+          provider: params.provider,
+          model: modelId,
+          systemPrompt,
+          prompt: params.prompt,
+          historyMessages: [],
+          imagesCount: params.images?.length ?? 0,
+        },
+        hookCtx,
+      );
+    });
+  }
 
   let imagePaths: string[] | undefined;
   let cleanupImages: (() => Promise<void>) | undefined;
@@ -321,6 +358,43 @@ export async function runCliAgent(params: {
 
     const text = output.text?.trim();
     const payloads = text ? [{ text }] : undefined;
+    const assistantTexts = text ? [text] : [];
+    const lastAssistant = text
+      ? {
+          role: "assistant",
+          content: text,
+          usage: output.usage,
+        }
+      : undefined;
+    if (hookRunner?.hasHooks("agent_end")) {
+      await runHookSafely("agent_end", async () => {
+        await hookRunner.runAgentEnd(
+          {
+            runId: params.runId,
+            messages: lastAssistant ? [lastAssistant] : [],
+            success: true,
+            durationMs: Date.now() - started,
+          },
+          hookCtx,
+        );
+      });
+    }
+    if (hookRunner?.hasHooks("llm_output")) {
+      await runHookSafely("llm_output", async () => {
+        await hookRunner.runLlmOutput(
+          {
+            runId: params.runId,
+            sessionId: params.sessionId,
+            provider: params.provider,
+            model: modelId,
+            assistantTexts,
+            lastAssistant,
+            usage: output.usage,
+          },
+          hookCtx,
+        );
+      });
+    }
 
     return {
       payloads,
@@ -335,6 +409,20 @@ export async function runCliAgent(params: {
       },
     };
   } catch (err) {
+    if (hookRunner?.hasHooks("agent_end")) {
+      await runHookSafely("agent_end", async () => {
+        await hookRunner.runAgentEnd(
+          {
+            runId: params.runId,
+            messages: [],
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+            durationMs: Date.now() - started,
+          },
+          hookCtx,
+        );
+      });
+    }
     if (err instanceof FailoverError) {
       throw err;
     }
@@ -361,6 +449,7 @@ export async function runClaudeCliAgent(params: {
   sessionId: string;
   sessionKey?: string;
   agentId?: string;
+  messageProvider?: string;
   sessionFile: string;
   workspaceDir: string;
   config?: OpenClawConfig;
@@ -379,6 +468,7 @@ export async function runClaudeCliAgent(params: {
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
     agentId: params.agentId,
+    messageProvider: params.messageProvider,
     sessionFile: params.sessionFile,
     workspaceDir: params.workspaceDir,
     config: params.config,

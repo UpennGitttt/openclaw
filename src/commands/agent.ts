@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import {
   listAgentIds,
   resolveAgentDir,
@@ -119,6 +120,7 @@ function runAgentAttempt(params: {
       sessionId: params.sessionId,
       sessionKey: params.sessionKey,
       agentId: params.sessionAgentId,
+      messageProvider: params.messageChannel ?? undefined,
       sessionFile: params.sessionFile,
       workspaceDir: params.workspaceDir,
       config: params.cfg,
@@ -281,7 +283,7 @@ export async function agentCommand(
     persistedVerbose,
   } = sessionResolution;
   let sessionEntry = resolvedSessionEntry;
-  const runId = opts.runId?.trim() || sessionId;
+  const runId = opts.runId?.trim() || crypto.randomUUID();
 
   try {
     if (opts.deliver === true) {

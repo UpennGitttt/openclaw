@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -492,6 +493,37 @@ describe("runCronIsolatedAgentTurn", () => {
       expect(first.sessionKey).toMatch(/^agent:main:cron:job-1:run:/);
       expect(second.sessionKey).toMatch(/^agent:main:cron:job-1:run:/);
       expect(second.sessionKey).not.toBe(first.sessionKey);
+    });
+  });
+
+  it("uses random runId for cron agent runs instead of sessionId", async () => {
+    await withTempHome(async (home) => {
+      const randomSpy = vi
+        .spyOn(crypto, "randomUUID")
+        .mockReturnValue("22222222-2222-4222-8222-222222222222");
+      try {
+        await runCronTurn(home, {
+          storeEntries: {
+            "agent:main:cron:job-1": {
+              sessionId: "cron-session-1",
+              updatedAt: Date.now(),
+              systemSent: false,
+            },
+          },
+          jobPayload: { kind: "agentTurn", message: "ping", deliver: false },
+          message: "ping",
+          mockTexts: ["ok"],
+        });
+      } finally {
+        randomSpy.mockRestore();
+      }
+
+      const callArgs = vi.mocked(runEmbeddedPiAgent).mock.calls.at(-1)?.[0] as
+        | { runId?: string; sessionId?: string }
+        | undefined;
+      expect(callArgs?.sessionId).toBe("cron-session-1");
+      expect(callArgs?.runId).toBe("22222222-2222-4222-8222-222222222222");
+      expect(callArgs?.runId).not.toBe(callArgs?.sessionId);
     });
   });
 

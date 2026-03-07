@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import {
   resolveAgentConfig,
   resolveAgentDir,
@@ -41,7 +42,7 @@ import {
   updateSessionStore,
 } from "../../config/sessions.js";
 import type { AgentDefaultsConfig } from "../../config/types.js";
-import { registerAgentRunContext } from "../../infra/agent-events.js";
+import { clearAgentRunContext, registerAgentRunContext } from "../../infra/agent-events.js";
 import { deliverOutboundPayloads } from "../../infra/outbound/deliver.js";
 import { resolveAgentOutboundIdentity } from "../../infra/outbound/identity.js";
 import { resolveOutboundSessionRoute } from "../../infra/outbound/outbound-session.js";
@@ -270,6 +271,7 @@ export async function runCronIsolatedAgentTurn(params: {
     nowMs: now,
   });
   const runSessionId = cronSession.sessionEntry.sessionId;
+  const runId = crypto.randomUUID();
   const runSessionKey = baseSessionKey.startsWith("cron:")
     ? `${agentSessionKey}:run:${runSessionId}`
     : agentSessionKey;
@@ -442,7 +444,7 @@ export async function runCronIsolatedAgentTurn(params: {
       normalizeVerboseLevel(cronSession.sessionEntry.verboseLevel) ??
       normalizeVerboseLevel(agentCfg?.verboseDefault) ??
       "off";
-    registerAgentRunContext(cronSession.sessionEntry.sessionId, {
+    registerAgentRunContext(runId, {
       sessionKey: agentSessionKey,
       verboseLevel: resolvedVerboseLevel,
     });
@@ -460,6 +462,7 @@ export async function runCronIsolatedAgentTurn(params: {
             sessionId: cronSession.sessionEntry.sessionId,
             sessionKey: agentSessionKey,
             agentId,
+            messageProvider: messageChannel,
             sessionFile,
             workspaceDir,
             config: cfgWithAgentDefaults,
@@ -468,7 +471,7 @@ export async function runCronIsolatedAgentTurn(params: {
             model: modelOverride,
             thinkLevel,
             timeoutMs,
-            runId: cronSession.sessionEntry.sessionId,
+            runId,
             cliSessionId,
           });
         }
@@ -477,6 +480,7 @@ export async function runCronIsolatedAgentTurn(params: {
           sessionKey: agentSessionKey,
           agentId,
           messageChannel,
+          messageProvider: messageChannel,
           agentAccountId: resolvedDelivery.accountId,
           sessionFile,
           workspaceDir,
@@ -489,7 +493,7 @@ export async function runCronIsolatedAgentTurn(params: {
           thinkLevel,
           verboseLevel: resolvedVerboseLevel,
           timeoutMs,
-          runId: cronSession.sessionEntry.sessionId,
+          runId,
           requireExplicitMessageTarget: true,
           disableMessageTool: deliveryRequested,
         });
@@ -501,6 +505,8 @@ export async function runCronIsolatedAgentTurn(params: {
     runEndedAt = Date.now();
   } catch (err) {
     return withRunSession({ status: "error", error: String(err) });
+  } finally {
+    clearAgentRunContext(runId);
   }
 
   const payloads = runResult.payloads ?? [];

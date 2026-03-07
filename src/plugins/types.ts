@@ -392,6 +392,8 @@ export type PluginHookLlmOutputEvent = {
 
 // agent_end hook
 export type PluginHookAgentEndEvent = {
+  /** Run identifier for this attempt. Prefer this for cross-hook correlation. */
+  runId?: string;
   messages: unknown[];
   success: boolean;
   error?: string;

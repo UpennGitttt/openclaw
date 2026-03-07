@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
@@ -137,6 +138,35 @@ describe("agentCommand", () => {
 
       const callArgs = vi.mocked(runEmbeddedPiAgent).mock.calls.at(-1)?.[0];
       expect(callArgs?.sessionId).toBe("session-123");
+    });
+  });
+
+  it("uses random runId by default when --run-id is not provided", async () => {
+    await withTempHome(async (home) => {
+      const store = path.join(home, "sessions.json");
+      writeSessionStoreSeed(store, {
+        foo: {
+          sessionId: "session-123",
+          updatedAt: Date.now(),
+          systemSent: true,
+        },
+      });
+      mockConfig(home, store);
+      const randomSpy = vi
+        .spyOn(crypto, "randomUUID")
+        .mockReturnValue("11111111-1111-4111-8111-111111111111");
+
+      try {
+        await agentCommand({ message: "resume me", sessionId: "session-123" }, runtime);
+      } finally {
+        randomSpy.mockRestore();
+      }
+
+      const callArgs = vi.mocked(runEmbeddedPiAgent).mock.calls.at(-1)?.[0] as
+        | { runId?: string; sessionId?: string }
+        | undefined;
+      expect(callArgs?.sessionId).toBe("session-123");
+      expect(callArgs?.runId).toBe("11111111-1111-4111-8111-111111111111");
     });
   });
 

@@ -1155,6 +1155,7 @@ export async function runEmbeddedAttempt(
           hookRunner
             .runAgentEnd(
               {
+                runId: params.runId,
                 messages: messagesSnapshot,
                 success: !aborted && !promptError,
                 error: promptError ? describeUnknownError(promptError) : undefined,

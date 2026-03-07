@@ -7,6 +7,12 @@ import { runCliAgent } from "./cli-runner.js";
 import { resolveCliNoOutputTimeoutMs } from "./cli-runner/helpers.js";
 
 const supervisorSpawnMock = vi.fn();
+const hookRunnerMock = {
+  hasHooks: vi.fn(),
+  runLlmInput: vi.fn(),
+  runLlmOutput: vi.fn(),
+  runAgentEnd: vi.fn(),
+};
 
 vi.mock("../process/supervisor/index.js", () => ({
   getProcessSupervisor: () => ({
@@ -16,6 +22,9 @@ vi.mock("../process/supervisor/index.js", () => ({
     reconcileOrphans: vi.fn(),
     getRecord: vi.fn(),
   }),
+}));
+vi.mock("../plugins/hook-runner-global.js", () => ({
+  getGlobalHookRunner: () => hookRunnerMock,
 }));
 
 type MockRunExit = {
@@ -49,6 +58,14 @@ function createManagedRun(exit: MockRunExit, pid = 1234) {
 describe("runCliAgent with process supervisor", () => {
   beforeEach(() => {
     supervisorSpawnMock.mockReset();
+    hookRunnerMock.hasHooks.mockReset();
+    hookRunnerMock.runLlmInput.mockReset();
+    hookRunnerMock.runLlmOutput.mockReset();
+    hookRunnerMock.runAgentEnd.mockReset();
+    hookRunnerMock.hasHooks.mockReturnValue(false);
+    hookRunnerMock.runLlmInput.mockResolvedValue(undefined);
+    hookRunnerMock.runLlmOutput.mockResolvedValue(undefined);
+    hookRunnerMock.runAgentEnd.mockResolvedValue(undefined);
   });
 
   it("runs CLI through supervisor and returns payload", async () => {
@@ -197,6 +214,62 @@ describe("runCliAgent with process supervisor", () => {
 
     const input = supervisorSpawnMock.mock.calls[0]?.[0] as { cwd?: string };
     expect(input.cwd).toBe(path.resolve(fallbackWorkspace));
+  });
+
+  it("emits llm_input/llm_output/agent_end hooks with runId for successful CLI runs", async () => {
+    hookRunnerMock.hasHooks.mockImplementation(
+      (name: string) => name === "llm_input" || name === "llm_output" || name === "agent_end",
+    );
+    supervisorSpawnMock.mockResolvedValueOnce(
+      createManagedRun({
+        reason: "exit",
+        exitCode: 0,
+        exitSignal: null,
+        durationMs: 30,
+        stdout: "cli answer",
+        stderr: "",
+        timedOut: false,
+        noOutputTimedOut: false,
+      }),
+    );
+
+    await runCliAgent({
+      sessionId: "s-hook",
+      sessionKey: "agent:main:main",
+      agentId: "main",
+      messageProvider: "telegram",
+      sessionFile: "/tmp/session.jsonl",
+      workspaceDir: "/tmp",
+      prompt: "hello",
+      provider: "codex-cli",
+      model: "gpt-5.2-codex",
+      timeoutMs: 1_000,
+      runId: "run-hook-1",
+    });
+
+    expect(hookRunnerMock.runLlmInput).toHaveBeenCalledTimes(1);
+    expect(hookRunnerMock.runLlmOutput).toHaveBeenCalledTimes(1);
+    expect(hookRunnerMock.runAgentEnd).toHaveBeenCalledTimes(1);
+
+    const llmInputEvent = hookRunnerMock.runLlmInput.mock.calls[0]?.[0] as {
+      runId?: string;
+      sessionId?: string;
+    };
+    const llmOutputEvent = hookRunnerMock.runLlmOutput.mock.calls[0]?.[0] as {
+      runId?: string;
+      assistantTexts?: string[];
+    };
+    const endEvent = hookRunnerMock.runAgentEnd.mock.calls[0]?.[0] as {
+      runId?: string;
+      success?: boolean;
+    };
+
+    expect(llmInputEvent.runId).toBe("run-hook-1");
+    expect(llmInputEvent.sessionId).toBe("s-hook");
+    expect(llmOutputEvent.runId).toBe("run-hook-1");
+    expect(llmOutputEvent.assistantTexts).toEqual(["cli answer"]);
+    expect(endEvent.runId).toBe("run-hook-1");
+    expect(endEvent.success).toBe(true);
   });
 });
 
