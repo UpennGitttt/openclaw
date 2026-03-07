@@ -16,6 +16,11 @@ type AgentEntry = NonNullable<NonNullable<OpenClawConfig["agents"]>["list"]>[num
 
 type ResolvedAgentConfig = {
   name?: string;
+  systemPrompt?: string;
+  systemPromptMode?: "append" | "replace";
+  promptContext?: {
+    files?: string[];
+  };
   workspace?: string;
   agentDir?: string;
   model?: AgentEntry["model"];
@@ -72,11 +77,22 @@ export function resolveDefaultAgentId(cfg: OpenClawConfig): string {
   return normalizeAgentId(chosen || DEFAULT_AGENT_ID);
 }
 
-export function resolveSessionAgentIds(params: { sessionKey?: string; config?: OpenClawConfig }): {
+export function resolveSessionAgentIds(params: {
+  sessionKey?: string;
+  config?: OpenClawConfig;
+  agentId?: string;
+}): {
   defaultAgentId: string;
   sessionAgentId: string;
 } {
   const defaultAgentId = resolveDefaultAgentId(params.config ?? {});
+  const explicitAgentId =
+    typeof params.agentId === "string" && params.agentId.trim()
+      ? normalizeAgentId(params.agentId)
+      : undefined;
+  if (explicitAgentId) {
+    return { defaultAgentId, sessionAgentId: explicitAgentId };
+  }
   const sessionKey = params.sessionKey?.trim();
   const normalizedSessionKey = sessionKey ? sessionKey.toLowerCase() : undefined;
   const parsed = normalizedSessionKey ? parseAgentSessionKey(normalizedSessionKey) : null;
@@ -87,6 +103,7 @@ export function resolveSessionAgentIds(params: { sessionKey?: string; config?: O
 export function resolveSessionAgentId(params: {
   sessionKey?: string;
   config?: OpenClawConfig;
+  agentId?: string;
 }): string {
   return resolveSessionAgentIds(params).sessionAgentId;
 }
@@ -107,6 +124,15 @@ export function resolveAgentConfig(
   }
   return {
     name: typeof entry.name === "string" ? entry.name : undefined,
+    systemPrompt: typeof entry.systemPrompt === "string" ? entry.systemPrompt : undefined,
+    systemPromptMode:
+      entry.systemPromptMode === "append" || entry.systemPromptMode === "replace"
+        ? entry.systemPromptMode
+        : undefined,
+    promptContext:
+      typeof entry.promptContext === "object" && entry.promptContext
+        ? entry.promptContext
+        : undefined,
     workspace: typeof entry.workspace === "string" ? entry.workspace : undefined,
     agentDir: typeof entry.agentDir === "string" ? entry.agentDir : undefined,
     model:
@@ -123,6 +149,81 @@ export function resolveAgentConfig(
     sandbox: entry.sandbox,
     tools: entry.tools,
   };
+}
+
+function readPromptContextFiles(value: unknown): string[] | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const files = (value as { files?: unknown }).files;
+  if (!Array.isArray(files)) {
+    return undefined;
+  }
+  return files
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+}
+
+export function resolveAgentPromptContextFiles(
+  cfg: OpenClawConfig,
+  agentId: string,
+): string[] | undefined {
+  const entry = resolveAgentEntry(cfg, agentId);
+  const agentPromptContext = entry?.promptContext;
+  if (
+    agentPromptContext &&
+    typeof agentPromptContext === "object" &&
+    Object.hasOwn(agentPromptContext, "files")
+  ) {
+    const files = readPromptContextFiles(agentPromptContext);
+    return files ?? [];
+  }
+  const defaultsPromptContext = cfg.agents?.defaults?.promptContext;
+  if (
+    defaultsPromptContext &&
+    typeof defaultsPromptContext === "object" &&
+    Object.hasOwn(defaultsPromptContext, "files")
+  ) {
+    const files = readPromptContextFiles(defaultsPromptContext);
+    return files ?? [];
+  }
+  return undefined;
+}
+
+function readSystemPrompt(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readSystemPromptMode(value: unknown): "append" | "replace" | undefined {
+  if (value !== "append" && value !== "replace") {
+    return undefined;
+  }
+  return value;
+}
+
+export function resolveAgentSystemPrompt(cfg: OpenClawConfig, agentId: string): string | undefined {
+  const agentPrompt = readSystemPrompt(resolveAgentEntry(cfg, agentId)?.systemPrompt);
+  if (agentPrompt) {
+    return agentPrompt;
+  }
+  return readSystemPrompt(cfg.agents?.defaults?.systemPrompt);
+}
+
+export function resolveAgentSystemPromptMode(
+  cfg: OpenClawConfig,
+  agentId: string,
+): "append" | "replace" {
+  const entry = resolveAgentEntry(cfg, agentId);
+  const agentMode = readSystemPromptMode(entry?.systemPromptMode);
+  if (agentMode) {
+    return agentMode;
+  }
+  const defaultsMode = readSystemPromptMode(cfg.agents?.defaults?.systemPromptMode);
+  return defaultsMode ?? "append";
 }
 
 export function resolveAgentSkillsFilter(

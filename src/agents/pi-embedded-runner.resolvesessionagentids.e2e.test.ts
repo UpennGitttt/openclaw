@@ -48,4 +48,14 @@ describe("resolveSessionAgentIds", () => {
     });
     expect(sessionAgentId).toBe("main");
   });
+
+  it("prefers explicit agentId over sessionKey/default resolution", () => {
+    const { defaultAgentId, sessionAgentId } = resolveSessionAgentIds({
+      sessionKey: "telegram:slash:123",
+      agentId: "main",
+      config: cfg,
+    });
+    expect(defaultAgentId).toBe("beta");
+    expect(sessionAgentId).toBe("main");
+  });
 });

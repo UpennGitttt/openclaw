@@ -23,7 +23,11 @@ import { resolveUserPath } from "../../utils.js";
 import { normalizeMessageChannel } from "../../utils/message-channel.js";
 import { isReasoningTagProvider } from "../../utils/provider-utils.js";
 import { resolveOpenClawAgentDir } from "../agent-paths.js";
-import { resolveSessionAgentIds } from "../agent-scope.js";
+import {
+  resolveAgentSystemPrompt,
+  resolveAgentSystemPromptMode,
+  resolveSessionAgentIds,
+} from "../agent-scope.js";
 import type { ExecElevatedDefaults } from "../bash-tools.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "../bootstrap-files.js";
 import { listChannelSupportedActions, resolveChannelMessageToolHints } from "../channel-tools.js";
@@ -352,6 +356,16 @@ export async function compactEmbeddedPiSessionDirect(
       config: params.config,
       workspaceDir: effectiveWorkspace,
     });
+    const { defaultAgentId, sessionAgentId } = resolveSessionAgentIds({
+      sessionKey: params.sessionKey,
+      config: params.config,
+    });
+    const configuredAgentSystemPrompt = params.config
+      ? resolveAgentSystemPrompt(params.config, sessionAgentId)
+      : undefined;
+    const configuredAgentSystemPromptMode = params.config
+      ? resolveAgentSystemPromptMode(params.config, sessionAgentId)
+      : "append";
 
     const sessionLabel = params.sessionKey ?? params.sessionId;
     const { contextFiles } = await resolveBootstrapContextForRun({
@@ -359,6 +373,7 @@ export async function compactEmbeddedPiSessionDirect(
       config: params.config,
       sessionKey: params.sessionKey,
       sessionId: params.sessionId,
+      agentId: sessionAgentId,
       warn: makeBootstrapWarn({ sessionLabel, warn: (message) => log.warn(message) }),
     });
     const runAbortController = new AbortController();
@@ -464,10 +479,6 @@ export async function compactEmbeddedPiSessionDirect(
     const userTimezone = resolveUserTimezone(params.config?.agents?.defaults?.userTimezone);
     const userTimeFormat = resolveUserTimeFormat(params.config?.agents?.defaults?.timeFormat);
     const userTime = formatUserTime(new Date(), userTimezone, userTimeFormat);
-    const { defaultAgentId, sessionAgentId } = resolveSessionAgentIds({
-      sessionKey: params.sessionKey,
-      config: params.config,
-    });
     const isDefaultAgent = sessionAgentId === defaultAgentId;
     const promptMode =
       isSubagentSessionKey(params.sessionKey) || isCronSessionKey(params.sessionKey)
@@ -485,6 +496,8 @@ export async function compactEmbeddedPiSessionDirect(
       defaultThinkLevel: params.thinkLevel,
       reasoningLevel: params.reasoningLevel ?? "off",
       extraSystemPrompt: params.extraSystemPrompt,
+      agentSystemPrompt: configuredAgentSystemPrompt,
+      agentSystemPromptMode: configuredAgentSystemPromptMode,
       ownerNumbers: params.ownerNumbers,
       reasoningTagHint,
       heartbeatPrompt: isDefaultAgent

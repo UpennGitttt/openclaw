@@ -52,6 +52,8 @@ export function buildSystemPrompt(params: {
   config?: OpenClawConfig;
   defaultThinkLevel?: ThinkLevel;
   extraSystemPrompt?: string;
+  agentSystemPrompt?: string;
+  agentSystemPromptMode?: "append" | "replace";
   ownerNumbers?: string[];
   heartbeatPrompt?: string;
   docsPath?: string;
@@ -85,6 +87,8 @@ export function buildSystemPrompt(params: {
     workspaceDir: params.workspaceDir,
     defaultThinkLevel: params.defaultThinkLevel,
     extraSystemPrompt: params.extraSystemPrompt,
+    agentSystemPrompt: params.agentSystemPrompt,
+    agentSystemPromptMode: params.agentSystemPromptMode,
     ownerNumbers: params.ownerNumbers,
     reasoningTagHint: false,
     heartbeatPrompt: params.heartbeatPrompt,

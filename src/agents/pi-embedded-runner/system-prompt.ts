@@ -13,6 +13,8 @@ export function buildEmbeddedSystemPrompt(params: {
   defaultThinkLevel?: ThinkLevel;
   reasoningLevel?: ReasoningLevel;
   extraSystemPrompt?: string;
+  agentSystemPrompt?: string;
+  agentSystemPromptMode?: "append" | "replace";
   ownerNumbers?: string[];
   reasoningTagHint: boolean;
   heartbeatPrompt?: string;
@@ -54,6 +56,8 @@ export function buildEmbeddedSystemPrompt(params: {
     defaultThinkLevel: params.defaultThinkLevel,
     reasoningLevel: params.reasoningLevel,
     extraSystemPrompt: params.extraSystemPrompt,
+    agentSystemPrompt: params.agentSystemPrompt,
+    agentSystemPromptMode: params.agentSystemPromptMode,
     ownerNumbers: params.ownerNumbers,
     reasoningTagHint: params.reasoningTagHint,
     heartbeatPrompt: params.heartbeatPrompt,

@@ -1,5 +1,9 @@
 import type { OpenClawConfig } from "../config/config.js";
-import { resolveAgentWorkspaceDir } from "./agent-scope.js";
+import {
+  resolveAgentPromptContextFiles,
+  resolveAgentWorkspaceDir,
+  resolveSessionAgentIds,
+} from "./agent-scope.js";
 import { applyBootstrapHookOverrides } from "./bootstrap-hooks.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
 import {
@@ -9,6 +13,7 @@ import {
 } from "./pi-embedded-helpers.js";
 import {
   filterBootstrapFilesForSession,
+  loadPromptContextFiles,
   loadWorkspaceBootstrapFiles,
   type WorkspaceBootstrapFile,
 } from "./workspace.js";
@@ -31,12 +36,23 @@ export async function resolveBootstrapFilesForRun(params: {
   agentId?: string;
 }): Promise<WorkspaceBootstrapFile[]> {
   const sessionKey = params.sessionKey ?? params.sessionId;
+  const resolvedAgentId =
+    typeof params.agentId === "string" && params.agentId.trim()
+      ? resolveSessionAgentIds({
+          agentId: params.agentId,
+        }).sessionAgentId
+      : params.config
+        ? resolveSessionAgentIds({
+            sessionKey,
+            config: params.config,
+          }).sessionAgentId
+        : undefined;
 
   // 如果有 agentId，优先使用 agent 专属 workspace（使用框架标准函数）
   let effectiveWorkspaceDir = params.workspaceDir;
-  if (params.agentId && params.config) {
+  if (resolvedAgentId && params.config) {
     try {
-      effectiveWorkspaceDir = resolveAgentWorkspaceDir(params.config, params.agentId);
+      effectiveWorkspaceDir = resolveAgentWorkspaceDir(params.config, resolvedAgentId);
     } catch (error) {
       console.warn(
         `解析 agent workspace 失败，使用默认 workspace: ${error instanceof Error ? error.message : String(error)}`,
@@ -44,10 +60,16 @@ export async function resolveBootstrapFilesForRun(params: {
     }
   }
 
-  const bootstrapFiles = filterBootstrapFilesForSession(
-    await loadWorkspaceBootstrapFiles(effectiveWorkspaceDir),
-    sessionKey,
-  );
+  const scopedPromptFiles =
+    params.config && resolvedAgentId
+      ? resolveAgentPromptContextFiles(params.config, resolvedAgentId)
+      : undefined;
+
+  const loadedBootstrapFiles =
+    scopedPromptFiles !== undefined
+      ? await loadPromptContextFiles(effectiveWorkspaceDir, scopedPromptFiles)
+      : await loadWorkspaceBootstrapFiles(effectiveWorkspaceDir);
+  const bootstrapFiles = filterBootstrapFilesForSession(loadedBootstrapFiles, sessionKey);
 
   return applyBootstrapHookOverrides({
     files: bootstrapFiles,
@@ -55,7 +77,7 @@ export async function resolveBootstrapFilesForRun(params: {
     config: params.config,
     sessionKey: params.sessionKey,
     sessionId: params.sessionId,
-    agentId: params.agentId,
+    agentId: resolvedAgentId,
   });
 }
 

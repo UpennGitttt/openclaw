@@ -1,5 +1,9 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import { resolveSessionAgentIds } from "../../agents/agent-scope.js";
+import {
+  resolveAgentSystemPrompt,
+  resolveAgentSystemPromptMode,
+  resolveSessionAgentIds,
+} from "../../agents/agent-scope.js";
 import { resolveBootstrapContextForRun } from "../../agents/bootstrap-files.js";
 import { resolveDefaultModelForAgent } from "../../agents/model-selection.js";
 import type { EmbeddedContextFile } from "../../agents/pi-embedded-helpers.js";
@@ -28,11 +32,16 @@ export async function resolveCommandsSystemPromptBundle(
   params: HandleCommandsParams,
 ): Promise<CommandsSystemPromptBundle> {
   const workspaceDir = params.workspaceDir;
+  const { sessionAgentId } = resolveSessionAgentIds({
+    sessionKey: params.sessionKey,
+    config: params.cfg,
+  });
   const { bootstrapFiles, contextFiles: injectedFiles } = await resolveBootstrapContextForRun({
     workspaceDir,
     config: params.cfg,
     sessionKey: params.sessionKey,
     sessionId: params.sessionEntry?.sessionId,
+    agentId: sessionAgentId,
   });
   const skillsSnapshot = (() => {
     try {
@@ -71,10 +80,12 @@ export async function resolveCommandsSystemPromptBundle(
   })();
   const toolSummaries = buildToolSummaryMap(tools);
   const toolNames = tools.map((t) => t.name);
-  const { sessionAgentId } = resolveSessionAgentIds({
-    sessionKey: params.sessionKey,
-    config: params.cfg,
-  });
+  const configuredAgentSystemPrompt = params.cfg
+    ? resolveAgentSystemPrompt(params.cfg, sessionAgentId)
+    : undefined;
+  const configuredAgentSystemPromptMode = params.cfg
+    ? resolveAgentSystemPromptMode(params.cfg, sessionAgentId)
+    : "append";
   const defaultModelRef = resolveDefaultModelForAgent({
     cfg: params.cfg,
     agentId: sessionAgentId,
@@ -112,6 +123,8 @@ export async function resolveCommandsSystemPromptBundle(
     defaultThinkLevel: params.resolvedThinkLevel,
     reasoningLevel: params.resolvedReasoningLevel,
     extraSystemPrompt: undefined,
+    agentSystemPrompt: configuredAgentSystemPrompt,
+    agentSystemPromptMode: configuredAgentSystemPromptMode,
     ownerNumbers: undefined,
     reasoningTagHint: false,
     toolNames,

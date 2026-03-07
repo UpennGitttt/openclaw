@@ -9,11 +9,7 @@ import { resolveChannelCapabilities } from "../../../config/channel-capabilities
 import { getMachineDisplayName } from "../../../infra/machine-name.js";
 import { MAX_IMAGE_BYTES } from "../../../media/constants.js";
 import { getGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
-import {
-  isCronSessionKey,
-  isSubagentSessionKey,
-  normalizeAgentId,
-} from "../../../routing/session-key.js";
+import { isCronSessionKey, isSubagentSessionKey } from "../../../routing/session-key.js";
 import { resolveSignalReactionLevel } from "../../../signal/reaction-level.js";
 import { resolveTelegramInlineButtonsScope } from "../../../telegram/inline-buttons.js";
 import { resolveTelegramReactionLevel } from "../../../telegram/reaction-level.js";
@@ -22,7 +18,11 @@ import { resolveUserPath } from "../../../utils.js";
 import { normalizeMessageChannel } from "../../../utils/message-channel.js";
 import { isReasoningTagProvider } from "../../../utils/provider-utils.js";
 import { resolveOpenClawAgentDir } from "../../agent-paths.js";
-import { resolveSessionAgentIds } from "../../agent-scope.js";
+import {
+  resolveAgentSystemPrompt,
+  resolveAgentSystemPromptMode,
+  resolveSessionAgentIds,
+} from "../../agent-scope.js";
 import { createAnthropicPayloadLogger } from "../../anthropic-payload-log.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "../../bootstrap-files.js";
 import { createCacheTrace } from "../../cache-trace.js";
@@ -276,6 +276,7 @@ export async function runEmbeddedAttempt(
         config: params.config,
         sessionKey: params.sessionKey,
         sessionId: params.sessionId,
+        agentId: params.agentId,
         warn: makeBootstrapWarn({ sessionLabel, warn: (message) => log.warn(message) }),
       });
     const workspaceNotes = hookAdjustedBootstrapFiles.some(
@@ -380,7 +381,14 @@ export async function runEmbeddedAttempt(
     const { defaultAgentId, sessionAgentId } = resolveSessionAgentIds({
       sessionKey: params.sessionKey,
       config: params.config,
+      agentId: params.agentId,
     });
+    const configuredAgentSystemPrompt = params.config
+      ? resolveAgentSystemPrompt(params.config, sessionAgentId)
+      : undefined;
+    const configuredAgentSystemPromptMode = params.config
+      ? resolveAgentSystemPromptMode(params.config, sessionAgentId)
+      : "append";
     const sandboxInfo = buildEmbeddedSandboxInfo(sandbox, params.bashElevated);
     const reasoningTagHint = isReasoningTagProvider(params.provider);
     // Resolve channel-specific message actions for system prompt
@@ -439,6 +447,8 @@ export async function runEmbeddedAttempt(
       defaultThinkLevel: params.thinkLevel,
       reasoningLevel: params.reasoningLevel ?? "off",
       extraSystemPrompt: params.extraSystemPrompt,
+      agentSystemPrompt: configuredAgentSystemPrompt,
+      agentSystemPromptMode: configuredAgentSystemPromptMode,
       ownerNumbers: params.ownerNumbers,
       reasoningTagHint,
       heartbeatPrompt: isDefaultAgent
@@ -865,13 +875,11 @@ export async function runEmbeddedAttempt(
       }
 
       // Hook runner was already obtained earlier before tool creation
-      const hookAgentId =
-        typeof params.agentId === "string" && params.agentId.trim()
-          ? normalizeAgentId(params.agentId)
-          : resolveSessionAgentIds({
-              sessionKey: params.sessionKey,
-              config: params.config,
-            }).sessionAgentId;
+      const hookAgentId = resolveSessionAgentIds({
+        sessionKey: params.sessionKey,
+        config: params.config,
+        agentId: params.agentId,
+      }).sessionAgentId;
 
       let promptError: unknown = null;
       let promptErrorSource: "prompt" | "compaction" | null = null;

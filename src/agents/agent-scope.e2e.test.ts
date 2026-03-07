@@ -7,6 +7,9 @@ import {
   resolveEffectiveModelFallbacks,
   resolveAgentModelFallbacksOverride,
   resolveAgentModelPrimary,
+  resolveAgentPromptContextFiles,
+  resolveAgentSystemPrompt,
+  resolveAgentSystemPromptMode,
   resolveAgentWorkspaceDir,
 } from "./agent-scope.js";
 
@@ -48,6 +51,8 @@ describe("resolveAgentConfig", () => {
     const result = resolveAgentConfig(cfg, "main");
     expect(result).toEqual({
       name: "Main Agent",
+      systemPrompt: undefined,
+      promptContext: undefined,
       workspace: "~/openclaw",
       agentDir: "~/.openclaw/agents/main",
       model: "anthropic/claude-opus-4",
@@ -279,5 +284,102 @@ describe("resolveAgentConfig", () => {
 
     const agentDir = resolveAgentDir({} as OpenClawConfig, "main");
     expect(agentDir).toBe(path.join(path.resolve(home), ".openclaw", "agents", "main", "agent"));
+  });
+
+  it("resolves prompt context files with agent > defaults precedence", () => {
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: {
+          promptContext: {
+            files: ["AGENTS.md", "SOUL.md"],
+          },
+        },
+        list: [
+          {
+            id: "coding",
+            promptContext: {
+              files: ["context/coding.md"],
+            },
+          },
+        ],
+      },
+    };
+
+    expect(resolveAgentPromptContextFiles(cfg, "coding")).toEqual(["context/coding.md"]);
+    expect(resolveAgentPromptContextFiles(cfg, "main")).toEqual(["AGENTS.md", "SOUL.md"]);
+  });
+
+  it("keeps explicit empty prompt context file list as override", () => {
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: {
+          promptContext: {
+            files: ["AGENTS.md"],
+          },
+        },
+        list: [
+          {
+            id: "coding",
+            promptContext: {
+              files: [],
+            },
+          },
+        ],
+      },
+    };
+
+    expect(resolveAgentPromptContextFiles(cfg, "coding")).toEqual([]);
+  });
+
+  it("resolves systemPrompt with agent > defaults precedence", () => {
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: {
+          systemPrompt: "global system prompt",
+        },
+        list: [
+          {
+            id: "coding",
+            systemPrompt: "agent system prompt",
+          },
+        ],
+      },
+    };
+
+    expect(resolveAgentSystemPrompt(cfg, "coding")).toBe("agent system prompt");
+    expect(resolveAgentSystemPrompt(cfg, "main")).toBe("global system prompt");
+  });
+
+  it("resolves systemPromptMode with agent > defaults precedence", () => {
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: {
+          systemPromptMode: "replace",
+        },
+        list: [
+          {
+            id: "coding",
+            systemPromptMode: "append",
+          },
+          {
+            id: "ops",
+          },
+        ],
+      },
+    };
+
+    expect(resolveAgentSystemPromptMode(cfg, "coding")).toBe("append");
+    expect(resolveAgentSystemPromptMode(cfg, "ops")).toBe("replace");
+    expect(resolveAgentSystemPromptMode(cfg, "main")).toBe("replace");
+  });
+
+  it("defaults systemPromptMode to append", () => {
+    const cfg: OpenClawConfig = {
+      agents: {
+        list: [{ id: "coding" }],
+      },
+    };
+
+    expect(resolveAgentSystemPromptMode(cfg, "coding")).toBe("append");
   });
 });

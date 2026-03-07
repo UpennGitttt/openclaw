@@ -329,6 +329,40 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("Bravo");
   });
 
+  it("includes configured agent system prompt when provided", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      agentSystemPrompt: "You are the coding agent. Prefer concise answers.",
+    });
+
+    expect(prompt).toContain("## Agent System Prompt");
+    expect(prompt).toContain("You are the coding agent. Prefer concise answers.");
+  });
+
+  it("replaces built-in instruction sections when system prompt mode is replace", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      agentSystemPrompt: "You are a strict coding reviewer.",
+      agentSystemPromptMode: "replace",
+    });
+
+    expect(prompt).toContain("You are a strict coding reviewer.");
+    expect(prompt).not.toContain("## Tooling");
+    expect(prompt).not.toContain("## Safety");
+    expect(prompt).not.toContain("## Agent System Prompt");
+    expect(prompt).toContain("## Runtime");
+  });
+
+  it("falls back to append behavior when replace mode is set without agent system prompt", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      agentSystemPromptMode: "replace",
+    });
+
+    expect(prompt).toContain("## Tooling");
+    expect(prompt).toContain("## Safety");
+  });
+
   it("ignores context files with missing or blank paths", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",

@@ -7,7 +7,11 @@ import { isTruthyEnvValue } from "../infra/env.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
-import { resolveSessionAgentIds } from "./agent-scope.js";
+import {
+  resolveAgentSystemPrompt,
+  resolveAgentSystemPromptMode,
+  resolveSessionAgentIds,
+} from "./agent-scope.js";
 import { makeBootstrapWarn, resolveBootstrapContextForRun } from "./bootstrap-files.js";
 import { resolveCliBackendConfig } from "./cli-backends.js";
 import {
@@ -105,17 +109,25 @@ export async function runCliAgent(params: {
     .filter(Boolean)
     .join("\n");
 
+  const { defaultAgentId, sessionAgentId } = resolveSessionAgentIds({
+    sessionKey: params.sessionKey,
+    config: params.config,
+    agentId: workspaceResolution.agentId,
+  });
+  const configuredAgentSystemPrompt = params.config
+    ? resolveAgentSystemPrompt(params.config, sessionAgentId)
+    : undefined;
+  const configuredAgentSystemPromptMode = params.config
+    ? resolveAgentSystemPromptMode(params.config, sessionAgentId)
+    : "append";
   const sessionLabel = params.sessionKey ?? params.sessionId;
   const { contextFiles } = await resolveBootstrapContextForRun({
     workspaceDir,
     config: params.config,
     sessionKey: params.sessionKey,
     sessionId: params.sessionId,
+    agentId: sessionAgentId,
     warn: makeBootstrapWarn({ sessionLabel, warn: (message) => log.warn(message) }),
-  });
-  const { defaultAgentId, sessionAgentId } = resolveSessionAgentIds({
-    sessionKey: params.sessionKey,
-    config: params.config,
   });
   const heartbeatPrompt =
     sessionAgentId === defaultAgentId
@@ -132,6 +144,8 @@ export async function runCliAgent(params: {
     config: params.config,
     defaultThinkLevel: params.thinkLevel,
     extraSystemPrompt,
+    agentSystemPrompt: configuredAgentSystemPrompt,
+    agentSystemPromptMode: configuredAgentSystemPromptMode,
     ownerNumbers: params.ownerNumbers,
     heartbeatPrompt,
     docsPath: docsPath ?? undefined,

@@ -78,16 +78,7 @@ async function loadTemplate(name: string): Promise<string> {
   }
 }
 
-export type WorkspaceBootstrapFileName =
-  | typeof DEFAULT_AGENTS_FILENAME
-  | typeof DEFAULT_SOUL_FILENAME
-  | typeof DEFAULT_TOOLS_FILENAME
-  | typeof DEFAULT_IDENTITY_FILENAME
-  | typeof DEFAULT_USER_FILENAME
-  | typeof DEFAULT_HEARTBEAT_FILENAME
-  | typeof DEFAULT_BOOTSTRAP_FILENAME
-  | typeof DEFAULT_MEMORY_FILENAME
-  | typeof DEFAULT_MEMORY_ALT_FILENAME;
+export type WorkspaceBootstrapFileName = string;
 
 export type WorkspaceBootstrapFile = {
   name: WorkspaceBootstrapFileName;
@@ -477,6 +468,127 @@ export function filterBootstrapFilesForSession(
   return files.filter((file) => MINIMAL_BOOTSTRAP_ALLOWLIST.has(file.name));
 }
 
+function hasGlobPattern(value: string): boolean {
+  return value.includes("*") || value.includes("?") || value.includes("{");
+}
+
+async function resolvePromptContextPatternMatches(
+  resolvedDir: string,
+  pattern: string,
+): Promise<string[]> {
+  const trimmed = pattern.trim();
+  if (!trimmed) {
+    return [];
+  }
+  if (!hasGlobPattern(trimmed)) {
+    return [trimmed];
+  }
+  try {
+    const matches = fs.glob(trimmed, { cwd: resolvedDir });
+    const out: string[] = [];
+    for await (const item of matches) {
+      out.push(item);
+    }
+    return out.toSorted((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
+export async function loadPromptContextFiles(
+  dir: string,
+  patterns: string[],
+): Promise<WorkspaceBootstrapFile[]> {
+  if (!Array.isArray(patterns) || patterns.length === 0) {
+    return [];
+  }
+
+  const resolvedDir = resolveUserPath(dir);
+  let realResolvedDir = resolvedDir;
+  try {
+    realResolvedDir = await fs.realpath(resolvedDir);
+  } catch {
+    // Keep lexical root if realpath fails.
+  }
+
+  const result: WorkspaceBootstrapFile[] = [];
+  const seen = new Set<string>();
+
+  for (const rawPattern of patterns) {
+    const pattern = rawPattern.trim();
+    if (!pattern) {
+      continue;
+    }
+    const matches = await resolvePromptContextPatternMatches(resolvedDir, pattern);
+    const isGlob = hasGlobPattern(pattern);
+    const entries = matches.length > 0 ? matches : isGlob ? [] : [pattern];
+    for (const relPath of entries) {
+      const filePath = path.resolve(resolvedDir, relPath);
+      if (!filePath.startsWith(resolvedDir + path.sep) && filePath !== resolvedDir) {
+        continue;
+      }
+
+      let realFilePath = filePath;
+      try {
+        realFilePath = await fs.realpath(filePath);
+      } catch {
+        if (!isGlob) {
+          const key = `missing:${filePath}`;
+          if (seen.has(key)) {
+            continue;
+          }
+          seen.add(key);
+          result.push({
+            name: path.basename(filePath),
+            path: filePath,
+            missing: true,
+          });
+        }
+        continue;
+      }
+      if (
+        !realFilePath.startsWith(realResolvedDir + path.sep) &&
+        realFilePath !== realResolvedDir
+      ) {
+        continue;
+      }
+      try {
+        const stat = await fs.stat(realFilePath);
+        if (!stat.isFile()) {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+
+      const dedupeKey = `file:${realFilePath}`;
+      if (seen.has(dedupeKey)) {
+        continue;
+      }
+      seen.add(dedupeKey);
+
+      try {
+        const content = await fs.readFile(realFilePath, "utf-8");
+        result.push({
+          name: path.basename(realFilePath),
+          path: filePath,
+          content,
+          missing: false,
+        });
+      } catch {
+        if (!isGlob) {
+          result.push({
+            name: path.basename(filePath),
+            path: filePath,
+            missing: true,
+          });
+        }
+      }
+    }
+  }
+  return result;
+}
+
 export async function loadExtraBootstrapFiles(
   dir: string,
   extraPatterns: string[],
@@ -533,7 +645,7 @@ export async function loadExtraBootstrapFiles(
       }
       const content = await fs.readFile(realFilePath, "utf-8");
       result.push({
-        name: baseName as WorkspaceBootstrapFileName,
+        name: baseName,
         path: filePath,
         content,
         missing: false,
