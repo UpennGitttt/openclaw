@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { resolvePluginTools } from "./tools.js";
+import { getPluginToolMeta, resolvePluginTools } from "./tools.js";
 
 type MockRegistryToolEntry = {
   pluginId: string;
   optional: boolean;
+  sourceKind?: "plugin" | "mcp";
+  mcpServer?: string;
+  mcpTool?: string;
   source: string;
   factory: (ctx: unknown) => unknown;
 };
@@ -153,5 +156,78 @@ describe("resolvePluginTools optional tools", () => {
     expect(tools.map((tool) => tool.name)).toEqual(["other_tool"]);
     expect(registry.diagnostics).toHaveLength(1);
     expect(registry.diagnostics[0]?.message).toContain("plugin tool name conflict");
+  });
+
+  it("attaches MCP source metadata to plugin tool entries", () => {
+    setRegistry([
+      {
+        pluginId: "mcp:github",
+        optional: false,
+        sourceKind: "mcp",
+        mcpServer: "github",
+        mcpTool: "search_repos",
+        source: "/tmp/mcp-github.js",
+        factory: () => makeTool("search_repos"),
+      },
+    ]);
+
+    const tools = resolvePluginTools({
+      context: createContext() as never,
+    });
+    expect(tools).toHaveLength(1);
+    const tool = tools[0];
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("expected plugin tool");
+    }
+    expect(getPluginToolMeta(tool)).toEqual({
+      pluginId: "mcp:github",
+      optional: false,
+      sourceKind: "mcp",
+      mcpServer: "github",
+      mcpTool: "search_repos",
+    });
+  });
+
+  it("allows optional MCP tools via scoped mcp server/tool allowlist entries", () => {
+    setRegistry([
+      {
+        pluginId: "mcp:github",
+        optional: true,
+        sourceKind: "mcp",
+        mcpServer: "github",
+        mcpTool: "search_repos",
+        source: "/tmp/mcp-github.js",
+        factory: () => makeTool("search_repos"),
+      },
+    ]);
+
+    const tools = resolvePluginTools({
+      context: createContext() as never,
+      toolAllowlist: ["github/search_repos"],
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual(["search_repos"]);
+  });
+
+  it("allows optional MCP tools via wildcard mcp allowlist entries", () => {
+    setRegistry([
+      {
+        pluginId: "mcp:github",
+        optional: true,
+        sourceKind: "mcp",
+        mcpServer: "github",
+        mcpTool: "search_repos",
+        source: "/tmp/mcp-github.js",
+        factory: () => makeTool("search_repos"),
+      },
+    ]);
+
+    const tools = resolvePluginTools({
+      context: createContext() as never,
+      toolAllowlist: ["github/*"],
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual(["search_repos"]);
   });
 });

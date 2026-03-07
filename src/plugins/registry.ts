@@ -24,6 +24,7 @@ import type {
   OpenClawPluginService,
   OpenClawPluginToolContext,
   OpenClawPluginToolFactory,
+  OpenClawPluginToolOptions,
   PluginConfigUiHint,
   PluginDiagnostic,
   PluginLogger,
@@ -39,6 +40,9 @@ export type PluginToolRegistration = {
   factory: OpenClawPluginToolFactory;
   names: string[];
   optional: boolean;
+  sourceKind: "plugin" | "mcp";
+  mcpServer?: string;
+  mcpTool?: string;
   source: string;
 };
 
@@ -172,10 +176,13 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
   const registerTool = (
     record: PluginRecord,
     tool: AnyAgentTool | OpenClawPluginToolFactory,
-    opts?: { name?: string; names?: string[]; optional?: boolean },
+    opts?: OpenClawPluginToolOptions,
   ) => {
     const names = opts?.names ?? (opts?.name ? [opts.name] : []);
     const optional = opts?.optional === true;
+    const sourceKind = opts?.sourceKind === "mcp" ? "mcp" : "plugin";
+    const mcpServer = opts?.mcpServer?.trim() || undefined;
+    const mcpTool = opts?.mcpTool?.trim() || undefined;
     const factory: OpenClawPluginToolFactory =
       typeof tool === "function" ? tool : (_ctx: OpenClawPluginToolContext) => tool;
 
@@ -192,6 +199,9 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
       factory,
       names: normalized,
       optional,
+      sourceKind,
+      mcpServer,
+      mcpTool,
       source: record.source,
     });
   };

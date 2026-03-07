@@ -6,7 +6,11 @@ import {
   readTool,
 } from "@mariozechner/pi-coding-agent";
 import type { OpenClawConfig } from "../config/config.js";
-import type { ToolLoopDetectionConfig } from "../config/types.tools.js";
+import type {
+  ScopedToolPoliciesConfig,
+  ToolLoopDetectionConfig,
+  ToolPolicyConfig,
+} from "../config/types.tools.js";
 import { logWarn } from "../logger.js";
 import { getPluginToolMeta } from "../plugins/tools.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
@@ -26,6 +30,7 @@ import { createOpenClawTools } from "./openclaw-tools.js";
 import { wrapToolWithAbortSignal } from "./pi-tools.abort.js";
 import { wrapToolWithBeforeToolCallHook } from "./pi-tools.before-tool-call.js";
 import {
+  isToolAllowedByPolicyName,
   isToolAllowedByPolicies,
   resolveEffectiveToolPolicy,
   resolveGroupToolPolicy,
@@ -45,6 +50,7 @@ import {
 } from "./pi-tools.read.js";
 import { cleanToolSchemaForGemini, normalizeToolParameters } from "./pi-tools.schema.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
+import { pickSandboxToolPolicy } from "./sandbox-tool-policy.js";
 import type { SandboxContext } from "./sandbox.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import {
@@ -56,6 +62,7 @@ import {
   collectExplicitAllowlist,
   mergeAlsoAllowPolicy,
   resolveToolProfilePolicy,
+  type ToolPolicyLike,
 } from "./tool-policy.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
@@ -126,6 +133,143 @@ function resolveFsConfig(params: { cfg?: OpenClawConfig; agentId?: string }) {
   };
 }
 
+type ScopedToolPolicyKind = "tools" | "plugins" | "mcp";
+
+type ScopedToolPolicyMatch = {
+  kind: ScopedToolPolicyKind;
+  policyName?: string;
+};
+
+type ResolvedScopedToolPolicies = Partial<
+  Record<ScopedToolPolicyKind, { allow?: string[]; deny?: string[] }>
+>;
+
+function mergeDedupe(values: Array<string[] | undefined>): string[] | undefined {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const list of values) {
+    if (!Array.isArray(list)) {
+      continue;
+    }
+    for (const entry of list) {
+      const normalized = entry.trim();
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+      seen.add(normalized);
+      out.push(normalized);
+    }
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function resolveScopedPolicyFromConfig(
+  policy?: ToolPolicyConfig,
+): { allow?: string[]; deny?: string[] } | undefined {
+  if (!policy) {
+    return undefined;
+  }
+  const profilePolicy = resolveToolProfilePolicy(policy.profile);
+  const rawPolicy = pickSandboxToolPolicy(policy);
+  const allow = rawPolicy?.allow ?? profilePolicy?.allow;
+  const deny = mergeDedupe([profilePolicy?.deny, rawPolicy?.deny]);
+  if (!allow && !deny) {
+    return undefined;
+  }
+  return {
+    allow: Array.isArray(allow) ? [...allow] : undefined,
+    deny,
+  };
+}
+
+function resolveScopedToolPolicies(params: {
+  cfg?: OpenClawConfig;
+  agentId?: string;
+}): ResolvedScopedToolPolicies {
+  const globalPolicy = params.cfg?.tools?.policy;
+  const agentPolicy =
+    params.cfg && params.agentId
+      ? resolveAgentConfig(params.cfg, params.agentId)?.tools?.policy
+      : undefined;
+  const scoped: ScopedToolPoliciesConfig = {
+    tools: agentPolicy?.tools ?? globalPolicy?.tools,
+    plugins: agentPolicy?.plugins ?? globalPolicy?.plugins,
+    mcp: agentPolicy?.mcp ?? globalPolicy?.mcp,
+  };
+  return {
+    tools: resolveScopedPolicyFromConfig(scoped.tools),
+    plugins: resolveScopedPolicyFromConfig(scoped.plugins),
+    mcp: resolveScopedPolicyFromConfig(scoped.mcp),
+  };
+}
+
+function classifyToolForScopedPolicy(
+  tool: AnyAgentTool,
+  pluginMeta = getPluginToolMeta(tool),
+  opts?: {
+    inferMcpFromPluginIdPrefix?: boolean;
+  },
+): ScopedToolPolicyMatch {
+  if (!pluginMeta) {
+    return { kind: "tools" };
+  }
+  const inferredMcpServer =
+    opts?.inferMcpFromPluginIdPrefix && pluginMeta.pluginId.startsWith("mcp:")
+      ? pluginMeta.pluginId.slice(4).trim() || undefined
+      : undefined;
+  const mcpServer = pluginMeta.mcpServer?.trim();
+  if (pluginMeta.sourceKind === "mcp" || mcpServer || inferredMcpServer) {
+    const mcpTool = pluginMeta.mcpTool?.trim() || tool.name;
+    return {
+      kind: "mcp",
+      policyName:
+        mcpServer || inferredMcpServer ? `${mcpServer ?? inferredMcpServer}/${mcpTool}` : mcpTool,
+    };
+  }
+  return { kind: "plugins" };
+}
+
+function applyScopedToolPolicies(params: {
+  tools: AnyAgentTool[];
+  classify: (tool: AnyAgentTool) => ScopedToolPolicyMatch;
+  policies: ResolvedScopedToolPolicies;
+}): AnyAgentTool[] {
+  return params.tools.filter((tool) => {
+    const match = params.classify(tool);
+    const policy = params.policies[match.kind];
+    if (!policy) {
+      return true;
+    }
+    const policyName = match.policyName?.trim() || tool.name;
+    return isToolAllowedByPolicyName(policyName, policy);
+  });
+}
+
+function resolveScopedOptionalPluginAllowlist(
+  policies: ResolvedScopedToolPolicies,
+): ToolPolicyLike[] {
+  const out: ToolPolicyLike[] = [];
+  if (policies.plugins) {
+    out.push(policies.plugins);
+  }
+  if (policies.mcp) {
+    out.push(policies.mcp);
+  }
+  return out;
+}
+
+function resolvePluginToolBootstrapAllowlist(params: {
+  legacyPolicies: Array<ToolPolicyLike | undefined>;
+  scopedPolicies: ResolvedScopedToolPolicies;
+}): string[] {
+  return (
+    mergeDedupe([
+      collectExplicitAllowlist(params.legacyPolicies),
+      collectExplicitAllowlist(resolveScopedOptionalPluginAllowlist(params.scopedPolicies)),
+    ]) ?? []
+  );
+}
+
 export function resolveToolLoopDetectionConfig(params: {
   cfg?: OpenClawConfig;
   agentId?: string;
@@ -159,6 +303,10 @@ export const __testing = {
   patchToolSchemaForClaudeCompatibility,
   wrapToolParamNormalization,
   assertRequiredParams,
+  classifyToolForScopedPolicy,
+  resolveScopedToolPolicies,
+  applyScopedToolPolicies,
+  resolvePluginToolBootstrapAllowlist,
 } as const;
 
 export function createOpenClawCodingTools(options?: {
@@ -267,6 +415,7 @@ export function createOpenClawCodingTools(options?: {
           getSubagentDepthFromSessionStore(options.sessionKey, { cfg: options.config }),
         )
       : undefined;
+  const scopedPolicies = resolveScopedToolPolicies({ cfg: options?.config, agentId });
   const allowBackground = isToolAllowedByPolicies("process", [
     profilePolicyWithAlsoAllow,
     providerProfilePolicyWithAlsoAllow,
@@ -436,17 +585,20 @@ export function createOpenClawCodingTools(options?: {
       workspaceDir: workspaceRoot,
       sandboxed: !!sandbox,
       config: options?.config,
-      pluginToolAllowlist: collectExplicitAllowlist([
-        profilePolicy,
-        providerProfilePolicy,
-        globalPolicy,
-        globalProviderPolicy,
-        agentPolicy,
-        agentProviderPolicy,
-        groupPolicy,
-        sandbox?.tools,
-        subagentPolicy,
-      ]),
+      pluginToolAllowlist: resolvePluginToolBootstrapAllowlist({
+        legacyPolicies: [
+          profilePolicy,
+          providerProfilePolicy,
+          globalPolicy,
+          globalProviderPolicy,
+          agentPolicy,
+          agentProviderPolicy,
+          groupPolicy,
+          sandbox?.tools,
+          subagentPolicy,
+        ],
+        scopedPolicies,
+      }),
       currentChannelId: options?.currentChannelId,
       currentThreadTs: options?.currentThreadTs,
       replyToMode: options?.replyToMode,
@@ -481,10 +633,19 @@ export function createOpenClawCodingTools(options?: {
       { policy: subagentPolicy, label: "subagent tools.allow" },
     ],
   });
+  const enableLegacyMcpPrefixInference = Boolean(scopedPolicies.mcp);
+  const scopedFiltered = applyScopedToolPolicies({
+    tools: subagentFiltered,
+    classify: (tool) =>
+      classifyToolForScopedPolicy(tool, getPluginToolMeta(tool), {
+        inferMcpFromPluginIdPrefix: enableLegacyMcpPrefixInference,
+      }),
+    policies: scopedPolicies,
+  });
   // Always normalize tool JSON Schemas before handing them to pi-agent/pi-ai.
   // Without this, some providers (notably OpenAI) will reject root-level union schemas.
   // Provider-specific cleaning: Gemini needs constraint keywords stripped, but Anthropic expects them.
-  const normalized = subagentFiltered.map((tool) =>
+  const normalized = scopedFiltered.map((tool) =>
     normalizeToolParameters(tool, { modelProvider: options?.modelProvider }),
   );
   const withHooks = normalized.map((tool) =>

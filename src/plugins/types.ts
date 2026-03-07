@@ -73,6 +73,12 @@ export type OpenClawPluginToolOptions = {
   name?: string;
   names?: string[];
   optional?: boolean;
+  /** Source classification for scoped tool policy (default: "plugin"). */
+  sourceKind?: "plugin" | "mcp";
+  /** MCP server id/name for sourceKind="mcp". */
+  mcpServer?: string;
+  /** MCP tool id/name for sourceKind="mcp". */
+  mcpTool?: string;
 };
 
 export type OpenClawPluginHookOptions = {
