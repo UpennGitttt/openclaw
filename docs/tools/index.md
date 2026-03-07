@@ -12,6 +12,20 @@ OpenClaw exposes **first-class agent tools** for browser, canvas, nodes, and cro
 These replace the old `openclaw-*` skills: the tools are typed, no shelling,
 and the agent should rely on them directly.
 
+## Tool result format (required)
+
+Agent tools must return a structured tool result envelope, not a raw JSON string:
+
+```json
+{
+  "content": [{ "type": "text", "text": "{...json...}" }],
+  "details": { "...": "raw object payload" }
+}
+```
+
+Downstream components assume `content` is present (for rendering, sanitization, and media
+handling). Omitting it can cause runtime errors.
+
 ## Disabling tools
 
 You can globally allow/deny tools via `tools.allow` / `tools.deny` in `openclaw.json`

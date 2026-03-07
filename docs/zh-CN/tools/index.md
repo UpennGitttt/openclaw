@@ -19,6 +19,19 @@ OpenClaw 为 browser、canvas、nodes 和 cron 暴露**一流的智能体工具*
 这些工具取代了旧的 `openclaw-*` Skills：工具是类型化的，无需调用 shell，
 智能体应该直接依赖它们。
 
+## 工具结果格式（必需）
+
+智能体工具必须返回结构化的工具结果 envelope，而不是裸 JSON 字符串：
+
+```json
+{
+  "content": [{ "type": "text", "text": "{...json...}" }],
+  "details": { "...": "原始对象负载" }
+}
+```
+
+下游组件依赖 `content` 来做渲染、清洗和媒体处理；缺失会引发运行时错误。
+
 ## 禁用工具
 
 你可以通过 `openclaw.json` 中的 `tools.allow` / `tools.deny` 全局允许/拒绝工具

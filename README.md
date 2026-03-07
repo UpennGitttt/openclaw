@@ -121,7 +121,11 @@ node dist/index.js gateway --port 18789
 
 ```bash
 # Kill existing process and start fresh
-cd ~/openclaw && openclaw gateway stop && node dist/index.js gateway --port 18789
+cd ~/openclaw && openclaw gateway stop && node dist/index.js gateway --port 18789 --verbose --ws-log full --force
+
+# 启动服务 with verbose on
+node dist/index.js gateway run --port 18789 --verbose --ws-log full --force
+openclaw gateway run --port 18789 --verbose --ws-log full --force
 ```
 
 ### View Logs
