@@ -412,7 +412,8 @@ Runbook: [iOS connect](https://docs.openclaw.ai/platforms/ios).
 ## Agent workspace + skills
 
 - Workspace root: `~/.openclaw/workspace` (configurable via `agents.defaults.workspace`).
-- Injected prompt files: `AGENTS.md`, `SOUL.md`, `TOOLS.md`.
+- Default prompt context files: `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, `HEARTBEAT.md`, `BOOTSTRAP.md`, `MEMORY.md` (or `memory.md`).
+- Prompt context can be configured globally (`agents.defaults.promptContext.files`) and overridden per agent (`agents.list[].promptContext.files`).
 - Skills: `~/.openclaw/workspace/skills/<skill>/SKILL.md`.
 
 ## Configuration
@@ -421,11 +422,66 @@ Minimal `~/.openclaw/openclaw.json` (model + defaults):
 
 ```json5
 {
-  agent: {
-    model: "anthropic/claude-opus-4-6",
+  agents: {
+    defaults: {
+      model: {
+        primary: "anthropic/claude-opus-4-6",
+      },
+    },
   },
 }
 ```
+
+Per-agent prompt, tool policy, and memory search (recommended pattern):
+
+```json5
+{
+  agents: {
+    defaults: {
+      model: { primary: "anthropic/claude-opus-4-6" },
+      systemPromptMode: "append", // append | replace
+      systemPrompt: "Global instructions for all agents.",
+      promptContext: {
+        files: ["AGENTS.md", "SOUL.md", "TOOLS.md", "IDENTITY.md", "MEMORY.md"],
+      },
+      memorySearch: {
+        enabled: true,
+        provider: "openai",
+        model: "text-embedding-3-small",
+        sources: ["memory"], // add "sessions" only with experimental.sessionMemory=true
+      },
+    },
+    list: [
+      {
+        id: "coding",
+        systemPromptMode: "replace",
+        systemPrompt: "You are the coding agent.",
+        promptContext: {
+          files: ["AGENTS.md", "SOUL.md", "TOOLS.md", "MEMORY.md"],
+        },
+        tools: {
+          policy: {
+            tools: { allow: ["read", "write", "edit", "exec"] }, // core tools
+            plugins: { allow: ["memory_search", "memory_get"] }, // plugin tools
+            mcp: { deny: ["*"] }, // MCP tools
+          },
+        },
+        memorySearch: {
+          enabled: true,
+          sources: ["memory", "sessions"],
+          experimental: { sessionMemory: true },
+        },
+      },
+    ],
+  },
+}
+```
+
+Policy precedence and behavior:
+
+- Agent-level config overrides defaults (`agents.list[]` > `agents.defaults`).
+- `systemPromptMode: "append"` keeps built-in OpenClaw sections; `"replace"` uses configured text as the main system instruction body.
+- Tool policy is segmented into three independent lists: `tools` (core), `plugins`, and `mcp`.
 
 [Full configuration reference (all keys + examples).](https://docs.openclaw.ai/gateway/configuration)
 

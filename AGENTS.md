@@ -17,6 +17,23 @@
   - Extensions (channel plugins): `extensions/*` (e.g. `extensions/msteams`, `extensions/matrix`, `extensions/zalo`, `extensions/zalouser`, `extensions/voice-call`)
 - When adding channels/extensions/apps/docs, update `.github/labeler.yml` and create matching GitHub labels (use existing channel/extension label colors).
 
+## Agent Config Touchpoints
+
+- If you change agent config keys, update these type/schema files together:
+  `src/config/types.agent-defaults.ts`, `src/config/types.agents.ts`, `src/config/types.tools.ts`,
+  `src/config/zod-schema.agent-defaults.ts`, `src/config/zod-schema.agent-runtime.ts`,
+  `src/config/schema.help.ts`, `src/config/schema.labels.ts`.
+- Prompt context + system prompt chain:
+  `src/agents/agent-scope.ts`, `src/agents/bootstrap-files.ts`, `src/agents/system-prompt.ts`,
+  `src/agents/cli-runner.ts`, `src/agents/pi-embedded-runner/system-prompt.ts`.
+- Segmented tool policies (`tools` / `plugins` / `mcp`) and runtime matching:
+  `src/agents/pi-tools.ts`, `src/plugins/tools.ts`, `src/plugins/registry.ts`.
+- Memory recall/tooling path:
+  `src/agents/memory-search.ts`, `src/agents/tools/memory-tool.ts`, `src/memory/*`.
+- Keep docs and validation aligned when config behavior changes:
+  `README.md`, `docs/gateway/configuration.md`, `docs/gateway/configuration-reference.md`,
+  and `scripts/verify-tools-policy.ts`.
+
 ## Docs Linking (Mintlify)
 
 - Docs are hosted on Mintlify (docs.openclaw.ai).
