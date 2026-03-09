@@ -115,6 +115,12 @@ export function resolveSession(opts: {
   agentId?: string;
 }): SessionResolution {
   const sessionCfg = opts.cfg.session;
+  const explicitSessionKey =
+    opts.sessionKey?.trim() ||
+    resolveExplicitAgentSessionKey({
+      cfg: opts.cfg,
+      agentId: opts.agentId,
+    });
   const { sessionKey, sessionStore, storePath } = resolveSessionKeyForRequest({
     cfg: opts.cfg,
     to: opts.to,
@@ -140,8 +146,21 @@ export function resolveSession(opts: {
     ? evaluateSessionFreshness({ updatedAt: sessionEntry.updatedAt, now, policy: resetPolicy })
         .fresh
     : false;
+  const requestedSessionId = opts.sessionId?.trim() || undefined;
+  // Guard: only prevent rebinding when the session key was explicitly set for an agent
+  // (via config or CLI). Non-explicit keys (derived from sender/scope) are allowed to
+  // rebind because they naturally rotate across different senders.
+  if (requestedSessionId && explicitSessionKey && sessionKey === explicitSessionKey) {
+    const existingSessionId = sessionEntry?.sessionId?.trim();
+    if (existingSessionId && existingSessionId !== requestedSessionId) {
+      throw new Error(
+        `Refusing to rebind session key "${sessionKey}" from "${existingSessionId}" to "${requestedSessionId}". ` +
+          "Use the existing session key without --session-id, or reset the session first.",
+      );
+    }
+  }
   const sessionId =
-    opts.sessionId?.trim() || (fresh ? sessionEntry?.sessionId : undefined) || crypto.randomUUID();
+    requestedSessionId || (fresh ? sessionEntry?.sessionId : undefined) || crypto.randomUUID();
   const isNewSession = !fresh && !opts.sessionId;
 
   const persistedThinking =
