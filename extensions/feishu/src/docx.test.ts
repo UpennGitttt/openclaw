@@ -1,3 +1,4 @@
+import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const createFeishuClientMock = vi.hoisted(() => vi.fn());
@@ -93,8 +94,12 @@ describe("feishu_doc image fetch hardening", () => {
       config: {
         channels: {
           feishu: {
-            appId: "app_id",
-            appSecret: "app_secret",
+            accounts: {
+              default: {
+                appId: "app_id",
+                appSecret: "app_secret",
+              },
+            },
           },
         },
       } as any,
@@ -102,9 +107,19 @@ describe("feishu_doc image fetch hardening", () => {
       registerTool,
     } as any);
 
-    const feishuDocTool = registerTool.mock.calls
-      .map((call) => call[0])
-      .find((tool) => tool.name === "feishu_doc");
+    const factory = registerTool.mock.calls.find((call) => call[1]?.name === "feishu_doc")?.[0] as
+      | ((ctx: OpenClawPluginToolContext) => { name: string; execute: (...args: any[]) => unknown })
+      | undefined;
+    const feishuDocTool = factory?.({
+      agentAccountId: "default",
+      config: {} as any,
+      workspaceDir: "/tmp",
+      agentDir: "/tmp",
+      agentId: "main",
+      sessionKey: "main",
+      messageChannel: "feishu",
+      sandboxed: false,
+    });
     expect(feishuDocTool).toBeDefined();
 
     const result = await feishuDocTool.execute("tool-call", {
@@ -119,5 +134,94 @@ describe("feishu_doc image fetch hardening", () => {
     expect(result.details.images_processed).toBe(0);
     expect(consoleErrorSpy).toHaveBeenCalled();
     consoleErrorSpy.mockRestore();
+  });
+
+  it("surfaces Feishu API error details instead of only generic 400 text", async () => {
+    const apiError = Object.assign(new Error("Request failed with status code 400"), {
+      response: {
+        status: 400,
+        data: {
+          code: 99991672,
+          msg: "Access denied. Missing docx scope",
+          log_id: "20260309012308D9E7EF963792D949EDE1",
+          troubleshooter: "https://open.feishu.cn/search?log_id=test",
+          permission_violations: [{ scope: "docx:document:readonly" }],
+        },
+      },
+    });
+    const rawContentMock = vi.fn().mockRejectedValue(apiError);
+    const documentGetMock = vi.fn().mockResolvedValue({
+      code: 0,
+      data: { document: { title: "Doc" } },
+    });
+    const listMock = vi.fn().mockResolvedValue({
+      code: 0,
+      data: { items: [] },
+    });
+
+    createFeishuClientMock.mockReturnValueOnce({
+      docx: {
+        document: {
+          rawContent: rawContentMock,
+          get: documentGetMock,
+        },
+        documentBlock: {
+          list: listMock,
+        },
+      },
+      application: {
+        scope: {
+          list: scopeListMock,
+        },
+      },
+    });
+
+    const registerTool = vi.fn();
+    registerFeishuDocTools({
+      config: {
+        channels: {
+          feishu: {
+            accounts: {
+              default: {
+                appId: "app_id",
+                appSecret: "app_secret",
+              },
+            },
+          },
+        },
+      } as any,
+      logger: { debug: vi.fn(), info: vi.fn() } as any,
+      registerTool,
+    } as any);
+
+    const factory = registerTool.mock.calls.find((call) => call[1]?.name === "feishu_doc")?.[0] as
+      | ((ctx: OpenClawPluginToolContext) => { name: string; execute: (...args: any[]) => unknown })
+      | undefined;
+    const feishuDocTool = factory?.({
+      agentAccountId: "default",
+      config: {} as any,
+      workspaceDir: "/tmp",
+      agentDir: "/tmp",
+      agentId: "main",
+      sessionKey: "main",
+      messageChannel: "feishu",
+      sandboxed: false,
+    });
+    expect(feishuDocTool).toBeDefined();
+
+    const result = await feishuDocTool.execute("tool-call", {
+      action: "read",
+      doc_token: "doc_1",
+    });
+
+    expect(result.details).toMatchObject({
+      error: "Request failed with status code 400",
+      status: 400,
+      code: 99991672,
+      msg: "Access denied. Missing docx scope",
+      log_id: "20260309012308D9E7EF963792D949EDE1",
+      troubleshooter: "https://open.feishu.cn/search?log_id=test",
+      permission_violations: [{ scope: "docx:document:readonly" }],
+    });
   });
 });

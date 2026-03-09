@@ -2,11 +2,11 @@ import { Readable } from "stream";
 import type * as Lark from "@larksuiteoapi/node-sdk";
 import { Type } from "@sinclair/typebox";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { listEnabledFeishuAccounts } from "./accounts.js";
 import { createFeishuClient } from "./client.js";
 import { FeishuDocSchema, type FeishuDocParams } from "./doc-schema.js";
 import { getFeishuRuntime } from "./runtime.js";
-import { resolveToolsConfig } from "./tools-config.js";
+import { resolveFeishuToolContext } from "./tool-account.js";
+import { formatFeishuToolError } from "./tool-error.js";
 
 // ============ Helpers ============
 
@@ -447,26 +447,26 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
     return;
   }
 
-  // Check if any account is configured
-  const accounts = listEnabledFeishuAccounts(api.config);
-  if (accounts.length === 0) {
+  if (!resolveFeishuToolContext({ cfg: api.config })) {
     api.logger.debug?.("feishu_doc: No Feishu accounts configured, skipping doc tools");
     return;
   }
 
-  // Use first account's config for tools configuration
-  const firstAccount = accounts[0];
-  const toolsCfg = resolveToolsConfig(firstAccount.config.tools);
-  const mediaMaxBytes = (firstAccount.config?.mediaMaxMb ?? 30) * 1024 * 1024;
-
-  // Helper to get client for the default account
-  const getClient = () => createFeishuClient(firstAccount);
   const registered: string[] = [];
 
   // Main document tool with action-based dispatch
-  if (toolsCfg.doc) {
-    api.registerTool(
-      {
+  api.registerTool(
+    (ctx) => {
+      const resolved = resolveFeishuToolContext({
+        cfg: api.config,
+        ctx,
+        requiredTool: "doc",
+      });
+      if (!resolved) {
+        return null;
+      }
+      const getClient = () => createFeishuClient(resolved.account);
+      return {
         name: "feishu_doc",
         label: "Feishu Doc",
         description:
@@ -480,9 +480,11 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
               case "read":
                 return json(await readDoc(client, p.doc_token));
               case "write":
-                return json(await writeDoc(client, p.doc_token, p.content, mediaMaxBytes));
+                return json(await writeDoc(client, p.doc_token, p.content, resolved.mediaMaxBytes));
               case "append":
-                return json(await appendDoc(client, p.doc_token, p.content, mediaMaxBytes));
+                return json(
+                  await appendDoc(client, p.doc_token, p.content, resolved.mediaMaxBytes),
+                );
               case "create":
                 return json(await createDoc(client, p.title, p.folder_token));
               case "list_blocks":
@@ -498,19 +500,28 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
                 return json({ error: `Unknown action: ${(p as any).action}` });
             }
           } catch (err) {
-            return json({ error: err instanceof Error ? err.message : String(err) });
+            return json(formatFeishuToolError(err));
           }
         },
-      },
-      { name: "feishu_doc" },
-    );
-    registered.push("feishu_doc");
-  }
+      };
+    },
+    { name: "feishu_doc" },
+  );
+  registered.push("feishu_doc");
 
   // Keep feishu_app_scopes as independent tool
-  if (toolsCfg.scopes) {
-    api.registerTool(
-      {
+  api.registerTool(
+    (ctx) => {
+      const resolved = resolveFeishuToolContext({
+        cfg: api.config,
+        ctx,
+        requiredTool: "scopes",
+      });
+      if (!resolved) {
+        return null;
+      }
+      const getClient = () => createFeishuClient(resolved.account);
+      return {
         name: "feishu_app_scopes",
         label: "Feishu App Scopes",
         description:
@@ -521,14 +532,14 @@ export function registerFeishuDocTools(api: OpenClawPluginApi) {
             const result = await listAppScopes(getClient());
             return json(result);
           } catch (err) {
-            return json({ error: err instanceof Error ? err.message : String(err) });
+            return json(formatFeishuToolError(err));
           }
         },
-      },
-      { name: "feishu_app_scopes" },
-    );
-    registered.push("feishu_app_scopes");
-  }
+      };
+    },
+    { name: "feishu_app_scopes" },
+  );
+  registered.push("feishu_app_scopes");
 
   if (registered.length > 0) {
     api.logger.info?.(`feishu_doc: Registered ${registered.join(", ")}`);
