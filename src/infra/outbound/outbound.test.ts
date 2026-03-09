@@ -9,6 +9,7 @@ import { setActivePluginRegistry } from "../../plugins/runtime.js";
 import { createTestRegistry } from "../../test-utils/channel-plugins.js";
 import {
   ackDelivery,
+  cleanupFailedDeliveries,
   computeBackoffMs,
   enqueueDelivery,
   failDelivery,
@@ -258,6 +259,55 @@ describe("delivery-queue", () => {
       expect(entries[0].lastError).toBe("network down");
     });
 
+    it("moves entries with permanent 4xx lastError to failed without retrying", async () => {
+      const id = await enqueueDelivery(
+        { channel: "feishu", to: "u_1", payloads: [{ text: "x" }] },
+        tmpDir,
+      );
+      const filePath = path.join(tmpDir, "delivery-queue", `${id}.json`);
+      const entry = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      entry.retryCount = 2;
+      entry.lastError = "Request failed with status code 400";
+      fs.writeFileSync(filePath, JSON.stringify(entry), "utf-8");
+
+      const deliver = vi.fn().mockResolvedValue([]);
+      const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+      const result = await recoverPendingDeliveries({
+        deliver,
+        log,
+        cfg: baseCfg,
+        stateDir: tmpDir,
+        delay: noopDelay,
+      });
+
+      expect(deliver).not.toHaveBeenCalled();
+      expect(result).toEqual({ recovered: 0, failed: 0, skipped: 1 });
+      expect(fs.existsSync(path.join(tmpDir, "delivery-queue", "failed", `${id}.json`))).toBe(true);
+    });
+
+    it("moves entries to failed when recovery returns permanent 4xx", async () => {
+      const id = await enqueueDelivery(
+        { channel: "feishu", to: "u_1", payloads: [{ text: "x" }] },
+        tmpDir,
+      );
+      const deliver = vi.fn().mockRejectedValue(new Error("Request failed with status code 400"));
+      const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+      const result = await recoverPendingDeliveries({
+        deliver,
+        log,
+        cfg: baseCfg,
+        stateDir: tmpDir,
+        delay: noopDelay,
+      });
+
+      expect(result).toEqual({ recovered: 0, failed: 0, skipped: 1 });
+      expect(fs.existsSync(path.join(tmpDir, "delivery-queue", "failed", `${id}.json`))).toBe(true);
+      const remaining = await loadPendingDeliveries(tmpDir);
+      expect(remaining).toHaveLength(0);
+    });
+
     it("passes skipQueue: true to prevent re-enqueueing during recovery", async () => {
       await enqueueDelivery({ channel: "whatsapp", to: "+1", payloads: [{ text: "a" }] }, tmpDir);
 
@@ -395,6 +445,47 @@ describe("delivery-queue", () => {
 
       expect(result).toEqual({ recovered: 0, failed: 0, skipped: 0 });
       expect(deliver).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("cleanupFailedDeliveries", () => {
+    it("treats retentionMs: 0 as disabled (no cleanup)", async () => {
+      const failedDir = path.join(tmpDir, "delivery-queue", "failed");
+      fs.mkdirSync(failedDir, { recursive: true });
+      fs.writeFileSync(path.join(failedDir, "entry.json"), JSON.stringify({ id: "e1" }), "utf-8");
+
+      const result = await cleanupFailedDeliveries({
+        stateDir: tmpDir,
+        retentionMs: 0,
+      });
+
+      expect(result).toEqual({ scanned: 0, removed: 0, kept: 0 });
+      // File should still exist — cleanup was disabled.
+      expect(fs.existsSync(path.join(failedDir, "entry.json"))).toBe(true);
+    });
+
+    it("removes stale failed entries older than retention", async () => {
+      const failedDir = path.join(tmpDir, "delivery-queue", "failed");
+      fs.mkdirSync(failedDir, { recursive: true });
+      const oldFile = path.join(failedDir, "old.json");
+      const freshFile = path.join(failedDir, "fresh.json");
+      fs.writeFileSync(oldFile, JSON.stringify({ id: "old" }), "utf-8");
+      fs.writeFileSync(freshFile, JSON.stringify({ id: "fresh" }), "utf-8");
+      const now = Date.now();
+      const fortyDaysMs = 40 * 24 * 60 * 60 * 1000;
+      const oneDayMs = 24 * 60 * 60 * 1000;
+      fs.utimesSync(oldFile, new Date(now - fortyDaysMs), new Date(now - fortyDaysMs));
+      fs.utimesSync(freshFile, new Date(now - oneDayMs), new Date(now - oneDayMs));
+
+      const result = await cleanupFailedDeliveries({
+        stateDir: tmpDir,
+        retentionMs: 30 * 24 * 60 * 60 * 1000,
+        nowMs: now,
+      });
+
+      expect(result).toEqual({ scanned: 2, removed: 1, kept: 1 });
+      expect(fs.existsSync(oldFile)).toBe(false);
+      expect(fs.existsSync(freshFile)).toBe(true);
     });
   });
 });
