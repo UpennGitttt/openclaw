@@ -78,7 +78,19 @@ async function loadTemplate(name: string): Promise<string> {
   }
 }
 
-export type WorkspaceBootstrapFileName = string;
+export type BuiltinBootstrapFileName =
+  | typeof DEFAULT_AGENTS_FILENAME
+  | typeof DEFAULT_SOUL_FILENAME
+  | typeof DEFAULT_TOOLS_FILENAME
+  | typeof DEFAULT_IDENTITY_FILENAME
+  | typeof DEFAULT_USER_FILENAME
+  | typeof DEFAULT_HEARTBEAT_FILENAME
+  | typeof DEFAULT_BOOTSTRAP_FILENAME
+  | typeof DEFAULT_MEMORY_FILENAME
+  | typeof DEFAULT_MEMORY_ALT_FILENAME;
+
+/** Union of built-in bootstrap file names and arbitrary custom prompt context file names. */
+export type WorkspaceBootstrapFileName = BuiltinBootstrapFileName | (string & {});
 
 export type WorkspaceBootstrapFile = {
   name: WorkspaceBootstrapFileName;
@@ -472,10 +484,7 @@ function hasGlobPattern(value: string): boolean {
   return value.includes("*") || value.includes("?") || value.includes("{");
 }
 
-async function resolvePromptContextPatternMatches(
-  resolvedDir: string,
-  pattern: string,
-): Promise<string[]> {
+async function resolveGlobPatternMatches(resolvedDir: string, pattern: string): Promise<string[]> {
   const trimmed = pattern.trim();
   if (!trimmed) {
     return [];
@@ -495,11 +504,21 @@ async function resolvePromptContextPatternMatches(
   }
 }
 
-export async function loadPromptContextFiles(
+/**
+ * Shared implementation for loading files from glob/literal patterns within a workspace dir.
+ * Used by both `loadPromptContextFiles` and `loadExtraBootstrapFiles`.
+ */
+async function loadFilesFromPatterns(
   dir: string,
   patterns: string[],
+  opts?: {
+    /** When set, only files whose basename is in this set are loaded. */
+    nameFilter?: ReadonlySet<string>;
+    /** Whether to record missing (non-glob) files in the result. Default: false. */
+    trackMissing?: boolean;
+  },
 ): Promise<WorkspaceBootstrapFile[]> {
-  if (!Array.isArray(patterns) || patterns.length === 0) {
+  if (!patterns.length) {
     return [];
   }
 
@@ -511,6 +530,8 @@ export async function loadPromptContextFiles(
     // Keep lexical root if realpath fails.
   }
 
+  const trackMissing = opts?.trackMissing ?? false;
+  const nameFilter = opts?.nameFilter;
   const result: WorkspaceBootstrapFile[] = [];
   const seen = new Set<string>();
 
@@ -519,11 +540,12 @@ export async function loadPromptContextFiles(
     if (!pattern) {
       continue;
     }
-    const matches = await resolvePromptContextPatternMatches(resolvedDir, pattern);
+    const matches = await resolveGlobPatternMatches(resolvedDir, pattern);
     const isGlob = hasGlobPattern(pattern);
     const entries = matches.length > 0 ? matches : isGlob ? [] : [pattern];
     for (const relPath of entries) {
       const filePath = path.resolve(resolvedDir, relPath);
+      // Guard against path traversal — resolved path must stay within workspace
       if (!filePath.startsWith(resolvedDir + path.sep) && filePath !== resolvedDir) {
         continue;
       }
@@ -532,24 +554,28 @@ export async function loadPromptContextFiles(
       try {
         realFilePath = await fs.realpath(filePath);
       } catch {
-        if (!isGlob) {
+        if (trackMissing && !isGlob) {
           const key = `missing:${filePath}`;
-          if (seen.has(key)) {
-            continue;
+          if (!seen.has(key)) {
+            seen.add(key);
+            result.push({
+              name: path.basename(filePath),
+              path: filePath,
+              missing: true,
+            });
           }
-          seen.add(key);
-          result.push({
-            name: path.basename(filePath),
-            path: filePath,
-            missing: true,
-          });
         }
         continue;
       }
+      // Verify the real path (after symlink resolution) is still within workspace
       if (
         !realFilePath.startsWith(realResolvedDir + path.sep) &&
         realFilePath !== realResolvedDir
       ) {
+        continue;
+      }
+      const baseName = path.basename(realFilePath);
+      if (nameFilter && !nameFilter.has(baseName)) {
         continue;
       }
       try {
@@ -570,13 +596,13 @@ export async function loadPromptContextFiles(
       try {
         const content = await fs.readFile(realFilePath, "utf-8");
         result.push({
-          name: path.basename(realFilePath),
+          name: baseName,
           path: filePath,
           content,
           missing: false,
         });
       } catch {
-        if (!isGlob) {
+        if (trackMissing && !isGlob) {
           result.push({
             name: path.basename(filePath),
             path: filePath,
@@ -589,70 +615,16 @@ export async function loadPromptContextFiles(
   return result;
 }
 
+export async function loadPromptContextFiles(
+  dir: string,
+  patterns: string[],
+): Promise<WorkspaceBootstrapFile[]> {
+  return loadFilesFromPatterns(dir, patterns, { trackMissing: true });
+}
+
 export async function loadExtraBootstrapFiles(
   dir: string,
   extraPatterns: string[],
 ): Promise<WorkspaceBootstrapFile[]> {
-  if (!extraPatterns.length) {
-    return [];
-  }
-  const resolvedDir = resolveUserPath(dir);
-  let realResolvedDir = resolvedDir;
-  try {
-    realResolvedDir = await fs.realpath(resolvedDir);
-  } catch {
-    // Keep lexical root if realpath fails.
-  }
-
-  // Resolve glob patterns into concrete file paths
-  const resolvedPaths = new Set<string>();
-  for (const pattern of extraPatterns) {
-    if (pattern.includes("*") || pattern.includes("?") || pattern.includes("{")) {
-      try {
-        const matches = fs.glob(pattern, { cwd: resolvedDir });
-        for await (const m of matches) {
-          resolvedPaths.add(m);
-        }
-      } catch {
-        // glob not available or pattern error — fall back to literal
-        resolvedPaths.add(pattern);
-      }
-    } else {
-      resolvedPaths.add(pattern);
-    }
-  }
-
-  const result: WorkspaceBootstrapFile[] = [];
-  for (const relPath of resolvedPaths) {
-    const filePath = path.resolve(resolvedDir, relPath);
-    // Guard against path traversal — resolved path must stay within workspace
-    if (!filePath.startsWith(resolvedDir + path.sep) && filePath !== resolvedDir) {
-      continue;
-    }
-    try {
-      // Resolve symlinks and verify the real path is still within workspace
-      const realFilePath = await fs.realpath(filePath);
-      if (
-        !realFilePath.startsWith(realResolvedDir + path.sep) &&
-        realFilePath !== realResolvedDir
-      ) {
-        continue;
-      }
-      // Only load files whose basename is a recognized bootstrap filename
-      const baseName = path.basename(relPath);
-      if (!VALID_BOOTSTRAP_NAMES.has(baseName)) {
-        continue;
-      }
-      const content = await fs.readFile(realFilePath, "utf-8");
-      result.push({
-        name: baseName,
-        path: filePath,
-        content,
-        missing: false,
-      });
-    } catch {
-      // Silently skip missing extra files
-    }
-  }
-  return result;
+  return loadFilesFromPatterns(dir, extraPatterns, { nameFilter: VALID_BOOTSTRAP_NAMES });
 }

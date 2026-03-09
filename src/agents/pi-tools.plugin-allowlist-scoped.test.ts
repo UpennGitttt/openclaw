@@ -28,7 +28,7 @@ describe("createOpenClawCodingTools optional plugin bootstrap allowlist", () => 
     });
 
     expect(openclawToolMocks.createOpenClawTools).toHaveBeenCalledOnce();
-    const call = openclawToolMocks.createOpenClawTools.mock.calls[0]?.[0] as
+    const call = (openclawToolMocks.createOpenClawTools.mock.calls as unknown[][])[0]?.[0] as
       | { pluginToolAllowlist?: string[] }
       | undefined;
     expect(call?.pluginToolAllowlist ?? []).toEqual(

@@ -2,14 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { listAgentIds, resolveAgentConfig } from "../src/agents/agent-scope.ts";
 import { createOpenClawCodingTools } from "../src/agents/pi-tools.ts";
+import type { OpenClawConfig } from "../src/config/config.ts";
 import { parseConfigJson5 } from "../src/config/config.ts";
 import { loadOpenClawPlugins } from "../src/plugins/loader.ts";
 
-type Config = {
-  agents?: {
-    defaults?: { model?: { primary?: string } };
-  };
-  tools?: {
+type Config = OpenClawConfig & {
+  tools?: OpenClawConfig["tools"] & {
     policy?: {
       tools?: { allow?: string[] };
       plugins?: { allow?: string[] };
@@ -34,7 +32,7 @@ function readConfig(configPath: string): Config {
 function classifyRuntimeTools(cfg: Config) {
   const workspaceDir = process.env.OPENCLAW_WORKSPACE_DIR || process.cwd();
   const registry = loadOpenClawPlugins({
-    config: cfg as never,
+    config: cfg as OpenClawConfig,
     workspaceDir,
     cache: false,
   });
@@ -58,8 +56,8 @@ function classifyRuntimeTools(cfg: Config) {
   const runtimePlugin = new Set<string>();
   const runtimeMcp = new Set<string>();
 
-  for (const agentId of listAgentIds(cfg as never)) {
-    const agentCfg = resolveAgentConfig(cfg as never, agentId) ?? {};
+  for (const agentId of listAgentIds(cfg as OpenClawConfig)) {
+    const agentCfg = resolveAgentConfig(cfg as OpenClawConfig, agentId) ?? {};
     const modelRaw =
       typeof agentCfg.model === "string"
         ? agentCfg.model
@@ -68,7 +66,7 @@ function classifyRuntimeTools(cfg: Config) {
     const modelId = rest.join("/") || undefined;
 
     const tools = createOpenClawCodingTools({
-      config: cfg as never,
+      config: cfg as OpenClawConfig,
       sessionKey: `agent:${agentId}:main`,
       agentDir: agentCfg.agentDir,
       workspaceDir: agentCfg.workspace,

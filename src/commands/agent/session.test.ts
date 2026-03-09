@@ -22,7 +22,7 @@ vi.mock("../../agents/agent-scope.js", () => ({
   listAgentIds: mocks.listAgentIds,
 }));
 
-const { resolveSessionKeyForRequest } = await import("./session.js");
+const { resolveSession, resolveSessionKeyForRequest } = await import("./session.js");
 
 describe("resolveSessionKeyForRequest", () => {
   const MAIN_STORE_PATH = "/tmp/main-store.json";
@@ -175,5 +175,45 @@ describe("resolveSessionKeyForRequest", () => {
     expect(storePaths).toHaveLength(2);
     expect(storePaths).toContain(MAIN_STORE_PATH);
     expect(storePaths).toContain(MYBOT_STORE_PATH);
+  });
+});
+
+describe("resolveSession", () => {
+  const MAIN_STORE_PATH = "/tmp/main-store.json";
+  const baseCfg: OpenClawConfig = {};
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.listAgentIds.mockReturnValue(["main", "coding"]);
+    mocks.resolveStorePath.mockReturnValue(MAIN_STORE_PATH);
+  });
+
+  it("throws when explicit agent main session key would be rebound to a different sessionId", () => {
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:coding:main": { sessionId: "existing-session-id", updatedAt: Date.now() },
+    });
+
+    expect(() =>
+      resolveSession({
+        cfg: baseCfg,
+        agentId: "coding",
+        sessionId: "cfg-migrate-check",
+      }),
+    ).toThrow(/Refusing to rebind session key "agent:coding:main"/);
+  });
+
+  it("keeps working when explicit key and provided sessionId already match", () => {
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:coding:main": { sessionId: "existing-session-id", updatedAt: Date.now() },
+    });
+
+    const resolved = resolveSession({
+      cfg: baseCfg,
+      agentId: "coding",
+      sessionId: "existing-session-id",
+    });
+
+    expect(resolved.sessionKey).toBe("agent:coding:main");
+    expect(resolved.sessionId).toBe("existing-session-id");
   });
 });

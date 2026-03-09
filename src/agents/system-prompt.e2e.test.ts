@@ -347,10 +347,14 @@ describe("buildAgentSystemPrompt", () => {
     });
 
     expect(prompt).toContain("You are a strict coding reviewer.");
+    // Instruction sections should be replaced
     expect(prompt).not.toContain("## Tooling");
     expect(prompt).not.toContain("## Safety");
     expect(prompt).not.toContain("## Agent System Prompt");
-    expect(prompt).toContain("## Runtime");
+    // Runtime context sections should be preserved
+    expect(prompt).toContain("## Workspace");
+    expect(prompt).toContain("/tmp/openclaw");
+    expect(prompt).toContain("## Workspace Files (injected)");
   });
 
   it("falls back to append behavior when replace mode is set without agent system prompt", () => {

@@ -36,17 +36,11 @@ export async function resolveBootstrapFilesForRun(params: {
   agentId?: string;
 }): Promise<WorkspaceBootstrapFile[]> {
   const sessionKey = params.sessionKey ?? params.sessionId;
-  const resolvedAgentId =
-    typeof params.agentId === "string" && params.agentId.trim()
-      ? resolveSessionAgentIds({
-          agentId: params.agentId,
-        }).sessionAgentId
-      : params.config
-        ? resolveSessionAgentIds({
-            sessionKey,
-            config: params.config,
-          }).sessionAgentId
-        : undefined;
+  const resolvedAgentId = resolveSessionAgentIds({
+    agentId: params.agentId,
+    sessionKey,
+    config: params.config,
+  }).sessionAgentId;
 
   // 如果有 agentId，优先使用 agent 专属 workspace（使用框架标准函数）
   let effectiveWorkspaceDir = params.workspaceDir;

@@ -406,11 +406,11 @@ export function buildAgentSystemPrompt(params: {
     return "You are a personal assistant running inside OpenClaw.";
   }
 
-  const lines = shouldReplaceWithAgentPrompt
+  // When replace mode is active, skip built-in instruction sections (Tooling, Safety, CLI, etc.)
+  // but preserve runtime context sections (Workspace, Sandbox, Identity, Time, etc.)
+  const instructionLines: string[] = shouldReplaceWithAgentPrompt
     ? [agentSystemPrompt ?? "", ""]
     : [
-        "You are a personal assistant running inside OpenClaw.",
-        "",
         "## Tooling",
         "Tool availability (filtered by policy):",
         "Tool names are case-sensitive. Call tools exactly as listed.",
@@ -483,75 +483,87 @@ export function buildAgentSystemPrompt(params: {
         userTimezone
           ? "If you need the current date, time, or day of week, run session_status (📊 session_status)."
           : "",
-        "## Workspace",
-        `Your working directory is: ${displayWorkspaceDir}`,
-        workspaceGuidance,
-        ...workspaceNotes,
-        "",
-        ...docsSection,
-        params.sandboxInfo?.enabled ? "## Sandbox" : "",
-        params.sandboxInfo?.enabled
-          ? [
-              "You are running in a sandboxed runtime (tools execute in Docker).",
-              "Some tools may be unavailable due to sandbox policy.",
-              "Sub-agents stay sandboxed (no elevated/host access). Need outside-sandbox read/write? Don't spawn; ask first.",
-              params.sandboxInfo.containerWorkspaceDir
-                ? `Sandbox container workdir: ${sanitizeForPromptLiteral(params.sandboxInfo.containerWorkspaceDir)}`
-                : "",
-              params.sandboxInfo.workspaceDir
-                ? `Sandbox host mount source (file tools bridge only; not valid inside sandbox exec): ${sanitizeForPromptLiteral(params.sandboxInfo.workspaceDir)}`
-                : "",
-              params.sandboxInfo.workspaceAccess
-                ? `Agent workspace access: ${params.sandboxInfo.workspaceAccess}${
-                    params.sandboxInfo.agentWorkspaceMount
-                      ? ` (mounted at ${sanitizeForPromptLiteral(params.sandboxInfo.agentWorkspaceMount)})`
-                      : ""
-                  }`
-                : "",
-              params.sandboxInfo.browserBridgeUrl ? "Sandbox browser: enabled." : "",
-              params.sandboxInfo.browserNoVncUrl
-                ? `Sandbox browser observer (noVNC): ${sanitizeForPromptLiteral(params.sandboxInfo.browserNoVncUrl)}`
-                : "",
-              params.sandboxInfo.hostBrowserAllowed === true
-                ? "Host browser control: allowed."
-                : params.sandboxInfo.hostBrowserAllowed === false
-                  ? "Host browser control: blocked."
-                  : "",
-              params.sandboxInfo.elevated?.allowed
-                ? "Elevated exec is available for this session."
-                : "",
-              params.sandboxInfo.elevated?.allowed
-                ? "User can toggle with /elevated on|off|ask|full."
-                : "",
-              params.sandboxInfo.elevated?.allowed
-                ? "You may also send /elevated on|off|ask|full when needed."
-                : "",
-              params.sandboxInfo.elevated?.allowed
-                ? `Current elevated level: ${params.sandboxInfo.elevated.defaultLevel} (ask runs exec on host with approvals; full auto-approves).`
-                : "",
-            ]
-              .filter(Boolean)
-              .join("\n")
-          : "",
-        params.sandboxInfo?.enabled ? "" : "",
-        ...buildUserIdentitySection(ownerLine, isMinimal),
-        ...buildTimeSection({
-          userTimezone,
-        }),
-        "## Workspace Files (injected)",
-        "These user-editable files are loaded by OpenClaw and included below in Project Context.",
-        "",
-        ...buildReplyTagsSection(isMinimal),
-        ...buildMessagingSection({
-          isMinimal,
-          availableTools,
-          messageChannelOptions,
-          inlineButtonsEnabled,
-          runtimeChannel,
-          messageToolHints: params.messageToolHints,
-        }),
-        ...buildVoiceSection({ isMinimal, ttsHint: params.ttsHint }),
       ];
+
+  // Runtime context sections — always included regardless of replace mode, as the agent
+  // needs workspace paths, sandbox info, identity, time, and messaging context to function.
+  const runtimeLines: string[] = [
+    "## Workspace",
+    `Your working directory is: ${displayWorkspaceDir}`,
+    workspaceGuidance,
+    ...workspaceNotes,
+    "",
+    ...docsSection,
+    params.sandboxInfo?.enabled ? "## Sandbox" : "",
+    params.sandboxInfo?.enabled
+      ? [
+          "You are running in a sandboxed runtime (tools execute in Docker).",
+          "Some tools may be unavailable due to sandbox policy.",
+          "Sub-agents stay sandboxed (no elevated/host access). Need outside-sandbox read/write? Don't spawn; ask first.",
+          params.sandboxInfo.containerWorkspaceDir
+            ? `Sandbox container workdir: ${sanitizeForPromptLiteral(params.sandboxInfo.containerWorkspaceDir)}`
+            : "",
+          params.sandboxInfo.workspaceDir
+            ? `Sandbox host mount source (file tools bridge only; not valid inside sandbox exec): ${sanitizeForPromptLiteral(params.sandboxInfo.workspaceDir)}`
+            : "",
+          params.sandboxInfo.workspaceAccess
+            ? `Agent workspace access: ${params.sandboxInfo.workspaceAccess}${
+                params.sandboxInfo.agentWorkspaceMount
+                  ? ` (mounted at ${sanitizeForPromptLiteral(params.sandboxInfo.agentWorkspaceMount)})`
+                  : ""
+              }`
+            : "",
+          params.sandboxInfo.browserBridgeUrl ? "Sandbox browser: enabled." : "",
+          params.sandboxInfo.browserNoVncUrl
+            ? `Sandbox browser observer (noVNC): ${sanitizeForPromptLiteral(params.sandboxInfo.browserNoVncUrl)}`
+            : "",
+          params.sandboxInfo.hostBrowserAllowed === true
+            ? "Host browser control: allowed."
+            : params.sandboxInfo.hostBrowserAllowed === false
+              ? "Host browser control: blocked."
+              : "",
+          params.sandboxInfo.elevated?.allowed
+            ? "Elevated exec is available for this session."
+            : "",
+          params.sandboxInfo.elevated?.allowed
+            ? "User can toggle with /elevated on|off|ask|full."
+            : "",
+          params.sandboxInfo.elevated?.allowed
+            ? "You may also send /elevated on|off|ask|full when needed."
+            : "",
+          params.sandboxInfo.elevated?.allowed
+            ? `Current elevated level: ${params.sandboxInfo.elevated.defaultLevel} (ask runs exec on host with approvals; full auto-approves).`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : "",
+    params.sandboxInfo?.enabled ? "" : "",
+    ...buildUserIdentitySection(ownerLine, isMinimal),
+    ...buildTimeSection({
+      userTimezone,
+    }),
+    "## Workspace Files (injected)",
+    "These user-editable files are loaded by OpenClaw and included below in Project Context.",
+    "",
+    ...buildReplyTagsSection(isMinimal),
+    ...buildMessagingSection({
+      isMinimal,
+      availableTools,
+      messageChannelOptions,
+      inlineButtonsEnabled,
+      runtimeChannel,
+      messageToolHints: params.messageToolHints,
+    }),
+    ...buildVoiceSection({ isMinimal, ttsHint: params.ttsHint }),
+  ];
+
+  const lines: string[] = [
+    "You are a personal assistant running inside OpenClaw.",
+    "",
+    ...instructionLines,
+    ...runtimeLines,
+  ];
 
   if (extraSystemPrompt) {
     // Use "Subagent Context" header for minimal mode (subagents), otherwise "Group Chat Context"
