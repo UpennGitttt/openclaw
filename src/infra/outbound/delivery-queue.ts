@@ -9,6 +9,8 @@ import type { OutboundChannel } from "./targets.js";
 const QUEUE_DIRNAME = "delivery-queue";
 const FAILED_DIRNAME = "failed";
 const MAX_RETRIES = 5;
+const DEFAULT_FAILED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const RETRYABLE_CLIENT_STATUS_CODES = new Set([408, 409, 425, 429]);
 
 /** Backoff delays in milliseconds indexed by retry count (1-based). */
 const BACKOFF_MS: readonly number[] = [
@@ -207,6 +209,120 @@ export interface RecoveryLogger {
   error(msg: string): void;
 }
 
+export async function cleanupFailedDeliveries(opts: {
+  stateDir?: string;
+  retentionMs?: number;
+  nowMs?: number;
+  log?: RecoveryLogger;
+}): Promise<{ scanned: number; removed: number; kept: number }> {
+  const retentionMs =
+    typeof opts.retentionMs === "number" && Number.isFinite(opts.retentionMs)
+      ? Math.max(0, Math.floor(opts.retentionMs))
+      : DEFAULT_FAILED_RETENTION_MS;
+  // retentionMs === 0 means cleanup is disabled (not "delete everything").
+  // Use a small positive value (e.g. 1) to express "immediate expiry".
+  if (retentionMs <= 0) {
+    return { scanned: 0, removed: 0, kept: 0 };
+  }
+  const failedDir = resolveFailedDir(opts.stateDir);
+  const now =
+    typeof opts.nowMs === "number" && Number.isFinite(opts.nowMs) ? opts.nowMs : Date.now();
+  let files: string[];
+  try {
+    files = await fs.promises.readdir(failedDir);
+  } catch (err) {
+    const code =
+      err && typeof err === "object" && "code" in err
+        ? String((err as { code?: unknown }).code)
+        : null;
+    if (code === "ENOENT") {
+      return { scanned: 0, removed: 0, kept: 0 };
+    }
+    throw err;
+  }
+
+  let scanned = 0;
+  let removed = 0;
+  let kept = 0;
+  for (const file of files) {
+    if (!file.endsWith(".json")) {
+      continue;
+    }
+    const filePath = path.join(failedDir, file);
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (!stat.isFile()) {
+        continue;
+      }
+      scanned += 1;
+      const ageMs = now - stat.mtimeMs;
+      if (ageMs > retentionMs) {
+        await fs.promises.unlink(filePath);
+        removed += 1;
+      } else {
+        kept += 1;
+      }
+    } catch {
+      // Best-effort cleanup: keep malformed/unreadable entries.
+      kept += 1;
+    }
+  }
+  if (removed > 0) {
+    opts.log?.info(
+      `Delivery failed cleanup removed ${removed}/${scanned} entries older than ${retentionMs}ms`,
+    );
+  }
+  return { scanned, removed, kept };
+}
+
+function extractHttpStatusCodeFromUnknown(err: unknown): number | null {
+  if (!err || typeof err !== "object") {
+    return null;
+  }
+  const candidate = err as {
+    status?: unknown;
+    response?: {
+      status?: unknown;
+    };
+    message?: unknown;
+  };
+  if (typeof candidate.status === "number" && Number.isInteger(candidate.status)) {
+    return candidate.status;
+  }
+  if (
+    typeof candidate.response?.status === "number" &&
+    Number.isInteger(candidate.response.status)
+  ) {
+    return candidate.response.status;
+  }
+  if (typeof candidate.message === "string") {
+    const fromMessage = extractHttpStatusCodeFromMessage(candidate.message);
+    if (fromMessage !== null) {
+      return fromMessage;
+    }
+  }
+  return null;
+}
+
+function extractHttpStatusCodeFromMessage(message?: string): number | null {
+  if (!message) {
+    return null;
+  }
+  const m = message.match(/\bstatus code (\d{3})\b/i);
+  if (!m?.[1]) {
+    return null;
+  }
+  const code = Number.parseInt(m[1], 10);
+  if (!Number.isInteger(code)) {
+    return null;
+  }
+  return code;
+}
+
+function isNonRetryableHttpStatus(code: number): boolean {
+  return code >= 400 && code < 500 && !RETRYABLE_CLIENT_STATUS_CODES.has(code);
+}
+
 /**
  * On gateway startup, scan the delivery queue and retry any pending entries.
  * Uses exponential backoff and moves entries that exceed MAX_RETRIES to failed/.
@@ -220,7 +336,14 @@ export async function recoverPendingDeliveries(opts: {
   delay?: (ms: number) => Promise<void>;
   /** Maximum wall-clock time for recovery in ms. Remaining entries are deferred to next restart. Default: 60 000. */
   maxRecoveryMs?: number;
+  /** Keep failed queue entries for this many milliseconds before cleanup. Default: 30 days. */
+  failedRetentionMs?: number;
 }): Promise<{ recovered: number; failed: number; skipped: number }> {
+  await cleanupFailedDeliveries({
+    stateDir: opts.stateDir,
+    retentionMs: opts.failedRetentionMs,
+    log: opts.log,
+  });
   const pending = await loadPendingDeliveries(opts.stateDir);
   if (pending.length === 0) {
     return { recovered: 0, failed: 0, skipped: 0 };
@@ -248,6 +371,19 @@ export async function recoverPendingDeliveries(opts: {
     if (entry.retryCount >= MAX_RETRIES) {
       opts.log.warn(
         `Delivery ${entry.id} exceeded max retries (${entry.retryCount}/${MAX_RETRIES}) — moving to failed/`,
+      );
+      try {
+        await moveToFailed(entry.id, opts.stateDir);
+      } catch (err) {
+        opts.log.error(`Failed to move entry ${entry.id} to failed/: ${String(err)}`);
+      }
+      skipped += 1;
+      continue;
+    }
+    const lastStatusCode = extractHttpStatusCodeFromMessage(entry.lastError);
+    if (lastStatusCode !== null && isNonRetryableHttpStatus(lastStatusCode)) {
+      opts.log.warn(
+        `Delivery ${entry.id} has non-retryable HTTP ${lastStatusCode} (lastError) — moving to failed/`,
       );
       try {
         await moveToFailed(entry.id, opts.stateDir);
@@ -290,6 +426,19 @@ export async function recoverPendingDeliveries(opts: {
       recovered += 1;
       opts.log.info(`Recovered delivery ${entry.id} to ${entry.channel}:${entry.to}`);
     } catch (err) {
+      const statusCode = extractHttpStatusCodeFromUnknown(err);
+      if (statusCode !== null && isNonRetryableHttpStatus(statusCode)) {
+        opts.log.warn(
+          `Delivery ${entry.id} failed with non-retryable HTTP ${statusCode} — moving to failed/`,
+        );
+        try {
+          await moveToFailed(entry.id, opts.stateDir);
+        } catch (moveErr) {
+          opts.log.error(`Failed to move entry ${entry.id} to failed/: ${String(moveErr)}`);
+        }
+        skipped += 1;
+        continue;
+      }
       try {
         await failDelivery(
           entry.id,
@@ -307,7 +456,7 @@ export async function recoverPendingDeliveries(opts: {
   }
 
   opts.log.info(
-    `Delivery recovery complete: ${recovered} recovered, ${failed} failed, ${skipped} skipped (max retries)`,
+    `Delivery recovery complete: ${recovered} recovered, ${failed} failed (retryable), ${skipped} skipped (${skipped} max-retries or non-retryable)`,
   );
   return { recovered, failed, skipped };
 }
